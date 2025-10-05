@@ -1,54 +1,94 @@
-﻿#include <stdio.h>
+﻿#include <stdint.h>
+#include <stdio.h>
 #include <windows.h>
 
 static bool running = false;
 
-static void ResizeDIBSection(size_t width, size_t height) {
-    printf("new width, height: %llu, %llu", width, height);
-    // auto buff = CreateDIBSection();
+static BITMAPINFO bitmapinfo;
+static void *bitmapbuff;
+static int bitmap_width;
+static int bitmap_height;
+
+static void RenderStuff(const int XOffset, const int YOffset) {
+    constexpr int bytes_per_pixel = 4;
+    const uint32_t pitch = bytes_per_pixel * bitmap_width;
+    uint8_t *row = bitmapbuff;
+    for (int y = 0; y < bitmap_height; ++y) {
+        // pixel color format: 00 RR GG BB
+        uint32_t *pixel = row;
+
+        for (int x = 0; x < bitmap_width; ++x) {
+            const uint8_t blue = x + XOffset;
+            const uint8_t green = y + YOffset;
+            constexpr uint8_t red = 0x80;
+
+            *pixel++ = red << 16 | green << 8 | blue;
+        }
+
+        row += pitch;
+    }
 }
 
-LRESULT CALLBACK MainWndProc(
-    HWND wnd, // handle to window
-    const UINT msg, // message identifier
-    const WPARAM wparam, // first message parameter
-    const LPARAM lparam) // second message parameter
-{
+static void ResizeDIBSection(const int width, const int height) {
+    printf("new width, height: %d, %d", width, height);
+
+    if (bitmapbuff) {
+        VirtualFree(bitmapbuff, 0, MEM_RELEASE);
+    }
+
+    bitmap_width = width;
+    bitmap_height = height;
+
+    bitmapinfo.bmiHeader.biSize = sizeof(bitmapinfo.bmiHeader);
+    bitmapinfo.bmiHeader.biWidth = bitmap_width;
+    bitmapinfo.bmiHeader.biHeight = bitmap_height;
+    bitmapinfo.bmiHeader.biPlanes = 1;
+    bitmapinfo.bmiHeader.biBitCount = 32;
+    bitmapinfo.bmiHeader.biCompression = BI_RGB;
+
+    constexpr int bytes_per_pixel = 4;
+    bitmapbuff = VirtualAlloc(nullptr, width * height * bytes_per_pixel,
+                              MEM_COMMIT, PAGE_READWRITE);
+}
+
+static void RenderLoop(HDC hdc, const RECT *winrect, int x, int y, int width,
+                       int height) {
+    const int window_width = winrect->right - winrect->left;
+    const int window_height = winrect->bottom - winrect->top;
+
+    StretchDIBits(hdc, 0, 0, bitmap_width, bitmap_height, 0, 0, window_width,
+                  window_height, bitmapbuff, &bitmapinfo, DIB_RGB_COLORS,
+                  SRCCOPY);
+}
+
+LRESULT CALLBACK MainWndProc(HWND wnd, const UINT msg, const WPARAM wparam,
+                             const LPARAM lparam) {
     LRESULT res = 0;
 
     switch (msg) {
         case WM_PAINT: {
-            // printf("WM_PAINT");
-
             PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(wnd, &ps);
-            static DWORD oper = BLACKNESS;
+            const HDC hdc = BeginPaint(wnd, &ps);
 
             const int x = ps.rcPaint.left;
             const int y = ps.rcPaint.top;
             const int width = ps.rcPaint.right - ps.rcPaint.left;
             const int height = ps.rcPaint.bottom - ps.rcPaint.top;
 
-            PatBlt(hdc, x, y, width, height, oper);
+            RECT rect;
+            GetClientRect(wnd, &rect);
 
-            if (oper == BLACKNESS) {
-                oper = WHITENESS;
-            } else {
-                oper = BLACKNESS;
-            }
+            RenderLoop(hdc, &rect, x, y, width, height);
 
             EndPaint(wnd, &ps);
         }
         break;
         case WM_SIZE: {
-
             RECT rect;
             GetClientRect(wnd, &rect);
-            const size_t width = rect.right - rect.left;
-            const size_t height = rect.bottom - rect.top;
-
+            const int width = rect.right - rect.left;
+            const int height = rect.bottom - rect.top;
             ResizeDIBSection(width, height);
-            printf("WM_SIZE");
         }
         break;
 
@@ -84,9 +124,9 @@ LRESULT CALLBACK MainWndProc(
     return res;
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, int nShowCmd) {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
+                   int nShowCmd) {
     WNDCLASS WindowClass = {};
-    running = true;
 
     WindowClass.lpfnWndProc = MainWndProc;
     WindowClass.hInstance = hInstance;
@@ -96,32 +136,35 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         return 1;
     }
 
-    HWND win_handle = CreateWindowExA(
-        0,
-        WindowClass.lpszClassName,
-        "HandMade Hero",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        nullptr,
-        nullptr,
-        hInstance,
-        nullptr
-    );
+    const HWND win_handle = CreateWindowExA(
+        0, WindowClass.lpszClassName, "HandMade Hero",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
+        CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr);
 
     if (!win_handle) {
         return 0;
     }
 
     MSG msg;
+    running = true;
+    int x = 0;
+    int y = 0;
     while (running) {
-        // If a message is in the queue.
-        if (PeekMessageA(&msg, win_handle, 0, 0, PM_REMOVE)) {
+        while (PeekMessageA(&msg, win_handle, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
+
+        RenderStuff(x, y);
+        const HDC hdc = GetDC(win_handle);
+        RECT rect;
+        GetClientRect(win_handle, &rect);
+        const int window_width = rect.right - rect.left;
+        const int window_height = rect.bottom - rect.top;
+        RenderLoop(hdc, &rect, 0, 0, window_width, window_height);
+        ReleaseDC(win_handle, hdc);
+        ++x;
+        ++y;
     }
 
     return 0;
