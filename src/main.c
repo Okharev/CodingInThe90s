@@ -4,20 +4,39 @@
 
 static bool running = false;
 
-static BITMAPINFO bitmapinfo;
-static void *bitmapbuff;
-static uint32_t bitmap_width;
-static uint32_t bitmap_height;
+struct win32_bitmap_dimensions {
+    uint32_t width;
+    uint32_t height;
+};
+
+static struct win32_bitmap_dimensions win32_get_bitmap_dimensions(HWND window) {
+    RECT rect;
+    GetClientRect(window, &rect);
+
+    struct win32_bitmap_dimensions dims;
+    dims.width = rect.right - rect.left;
+    dims.height = rect.bottom - rect.top;
+
+    return dims;
+}
+
+struct win32_screen_bitmap_buffer {
+    BITMAPINFO bitmapinfo;
+    void * restrict bitmapbuff;
+};
+
+static struct win32_screen_bitmap_buffer bitmap_buff;
 
 static void RenderStuff(const uint32_t XOffset, const uint32_t YOffset) {
     constexpr uint32_t bytes_per_pixel = 4;
-    const uint32_t pitch = bytes_per_pixel * bitmap_width;
-    uint8_t *row = bitmapbuff;
-    for (int y = 0; y < bitmap_height; ++y) {
-        // pixel color format: 00 RR GG BB
-        uint32_t *pixel = row;
+    const uint32_t pitch = bytes_per_pixel * bitmap_buff.bitmapinfo.bmiHeader.biWidth;
+    uint8_t * restrict row = __builtin_assume_aligned(bitmap_buff.bitmapbuff, 32);
 
-        for (int x = 0; x < bitmap_width; ++x) {
+    for (int y = 0; y < bitmap_buff.bitmapinfo.bmiHeader.biHeight; ++y) {
+        // pixel color format: 00 RR GG BB
+        uint32_t * restrict pixel = __builtin_assume_aligned(row, 16);
+
+        for (int x = 0; x < bitmap_buff.bitmapinfo.bmiHeader.biWidth; ++x) {
             const uint8_t blue = x + XOffset;
             const uint8_t green = y + YOffset;
             constexpr uint8_t red = 0x80;
@@ -30,62 +49,54 @@ static void RenderStuff(const uint32_t XOffset, const uint32_t YOffset) {
 }
 
 static void ResizeDIBSection(const uint32_t width, const uint32_t height) {
-    printf("new width, height: %d, %d", width, height);
-
-    if (bitmapbuff) {
-        VirtualFree(bitmapbuff, 0, MEM_RELEASE);
+    if (bitmap_buff.bitmapbuff) {
+        VirtualFree(bitmap_buff.bitmapbuff, 0, MEM_RELEASE);
     }
 
-    bitmap_width = width;
-    bitmap_height = height;
-
-    bitmapinfo.bmiHeader.biSize = sizeof(bitmapinfo.bmiHeader);
-    bitmapinfo.bmiHeader.biWidth = bitmap_width;
-    bitmapinfo.bmiHeader.biHeight = bitmap_height;
-    bitmapinfo.bmiHeader.biPlanes = 1;
-    bitmapinfo.bmiHeader.biBitCount = 32;
-    bitmapinfo.bmiHeader.biCompression = BI_RGB;
+    bitmap_buff.bitmapinfo.bmiHeader.biSize = sizeof(bitmap_buff.bitmapinfo.bmiHeader);
+    bitmap_buff.bitmapinfo.bmiHeader.biWidth = width;
+    bitmap_buff.bitmapinfo.bmiHeader.biHeight = height;
+    bitmap_buff.bitmapinfo.bmiHeader.biPlanes = 1;
+    bitmap_buff.bitmapinfo.bmiHeader.biBitCount = 32;
+    bitmap_buff.bitmapinfo.bmiHeader.biCompression = BI_RGB;
 
     constexpr uint32_t bytes_per_pixel = 4;
-    bitmapbuff = VirtualAlloc(
+    bitmap_buff.bitmapbuff = VirtualAlloc(
         nullptr,
         width * height * bytes_per_pixel,
-        MEM_COMMIT,
+        MEM_COMMIT | MEM_RESERVE,
         PAGE_READWRITE
     );
 }
 
 static void RenderLoop(
     HDC hdc,
-    const RECT *winrect,
-    uint32_t x,
-    uint32_t y,
-    uint32_t width,
-    uint32_t height
+    const uint32_t width,
+    const uint32_t height
 ) {
-    const uint32_t window_width = winrect->right - winrect->left;
-    const uint32_t window_height = winrect->bottom - winrect->top;
-
     StretchDIBits(
         hdc,
         0,
         0,
-        bitmap_width,
-        bitmap_height,
+        bitmap_buff.bitmapinfo.bmiHeader.biWidth,
+        bitmap_buff.bitmapinfo.bmiHeader.biHeight,
         0,
         0,
-        window_width,
-
-        window_height,
-        bitmapbuff,
-        &bitmapinfo,
+        width,
+        height,
+        bitmap_buff.bitmapbuff,
+        &bitmap_buff.bitmapinfo,
         DIB_RGB_COLORS,
         SRCCOPY
     );
 }
 
-LRESULT CALLBACK MainWndProc(HWND wnd, const UINT msg, const WPARAM wparam,
-                             const LPARAM lparam) {
+LRESULT CALLBACK MainWndProc(
+    HWND wnd,
+    const UINT msg,
+    const WPARAM wparam,
+    const LPARAM lparam
+) {
     LRESULT res = 0;
 
     switch (msg) {
@@ -93,25 +104,15 @@ LRESULT CALLBACK MainWndProc(HWND wnd, const UINT msg, const WPARAM wparam,
             PAINTSTRUCT ps;
             const HDC hdc = BeginPaint(wnd, &ps);
 
-            const uint32_t x = ps.rcPaint.left;
-            const uint32_t y = ps.rcPaint.top;
-            const uint32_t width = ps.rcPaint.right - ps.rcPaint.left;
-            const uint32_t height = ps.rcPaint.bottom - ps.rcPaint.top;
-
-            RECT rect;
-            GetClientRect(wnd, &rect);
-
-            RenderLoop(hdc, &rect, x, y, width, height);
+            const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(wnd);
+            RenderLoop(hdc, dims.width, dims.height);
 
             EndPaint(wnd, &ps);
         }
         break;
         case WM_SIZE: {
-            RECT rect;
-            GetClientRect(wnd, &rect);
-            const uint32_t width = rect.right - rect.left;
-            const uint32_t height = rect.bottom - rect.top;
-            ResizeDIBSection(width, height);
+            const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(wnd);
+            ResizeDIBSection(dims.width, dims.height);
         }
         break;
 
@@ -164,9 +165,19 @@ int WINAPI WinMain(
     }
 
     const HWND win_handle = CreateWindowExA(
-        0, WindowClass.lpszClassName, "HandMade Hero",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-        CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr);
+        0,
+        WindowClass.lpszClassName,
+        "HandMade Hero",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        nullptr,
+        nullptr,
+        hInstance,
+        nullptr
+    );
 
     if (!win_handle) {
         return 0;
@@ -174,8 +185,8 @@ int WINAPI WinMain(
 
     MSG msg;
     running = true;
-    uint32_t x = 0;
-    uint32_t y = 0;
+
+    int x = 0; int y = 0;
     while (running) {
         while (PeekMessageA(&msg, win_handle, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
@@ -183,12 +194,12 @@ int WINAPI WinMain(
         }
 
         RenderStuff(x, y);
+
         const HDC hdc = GetDC(win_handle);
-        RECT rect;
-        GetClientRect(win_handle, &rect);
-        const uint32_t window_width = rect.right - rect.left;
-        const uint32_t window_height = rect.bottom - rect.top;
-        RenderLoop(hdc, &rect, 0, 0, window_width, window_height);
+        const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(win_handle);
+
+        RenderLoop(hdc, dims.width, dims.height);
+
         ReleaseDC(win_handle, hdc);
         ++x;
         ++y;

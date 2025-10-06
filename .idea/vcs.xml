@@ -5,5 +5,11 @@
     <mapping directory="$PROJECT_DIR$/cmake-build-debug-system/_deps/cglm-src" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/cmake-build-debug-system/_deps/flecs-src" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/cmake-build-debug-system/_deps/raylib-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release-system/_deps/cglm-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release-system/_deps/flecs-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release-system/_deps/raylib-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo-system/_deps/cglm-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo-system/_deps/flecs-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo-system/_deps/raylib-src" vcs="Git" />
   </component>
 </project>
