@@ -17,7 +17,7 @@ union pixel {
         uint8_t G;
         uint8_t R;
         uint8_t P;
-    };
+    } __attribute__((packed));
 
     alignas(4) uint8_t BGRP[4];
     __attribute__((aligned(4))) uint8_t* restrict raw_BGRP;
@@ -51,17 +51,18 @@ static bool is_power_of_two(const uintptr_t x) {
     return (x & x - 1) == 0;
 }
 
-static void render_gradient(const uint32_t XOffset, const uint32_t YOffset) {
+
+static void render_gradient(const uint32_t x_offset, const uint32_t y_offset) {
     const uint32_t pitch = bytes_per_pixel * bitmap_buff.bitmapinfo.bmiHeader.biWidth;
-    uint8_t *restrict row = bitmap_buff.bitmapbuff;
+    uint8_t * restrict row = __builtin_assume_aligned(bitmap_buff.bitmapbuff, 4);
 
     for (uint32_t y = 0; y < bitmap_buff.bitmapinfo.bmiHeader.biHeight; ++y) {
         // pixel color format: 00 RR GG BB
-        uint32_t *restrict pixel = row;
+        uint32_t * restrict pixel = __builtin_assume_aligned(row, 4);
 
         for (uint32_t x = 0; x < bitmap_buff.bitmapinfo.bmiHeader.biWidth; ++x) {
-            const uint8_t blue = x + XOffset;
-            const uint8_t green = y + YOffset;
+            const uint8_t blue = x + x_offset;
+            const uint8_t green = y + y_offset;
             constexpr uint8_t red = 0x80;
 
             *pixel++ = red << 16 | green << 8 | blue;
@@ -158,8 +159,9 @@ int WINAPI WinMain(
     PSTR lpCmdLine,
     int nShowCmd
 ) {
-    WNDCLASS WindowClass = {};
+    WNDCLASS WindowClass = {0};
 
+    WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     WindowClass.lpfnWndProc = MainWndProc;
     WindowClass.hInstance = hInstance;
     WindowClass.lpszClassName = "Window class";
@@ -187,6 +189,8 @@ int WINAPI WinMain(
         return 0;
     }
 
+    HDC hdc = GetDC(win_handle);
+
     MSG msg;
     running = true;
 
@@ -200,7 +204,6 @@ int WINAPI WinMain(
 
         render_gradient(x, y);
 
-        HDC hdc = GetDC(win_handle);
         const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(win_handle);
 
         stretch_wnd(hdc, dims.width, dims.height);
