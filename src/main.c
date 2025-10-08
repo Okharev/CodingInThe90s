@@ -9,6 +9,20 @@ struct win32_bitmap_dimensions {
     uint32_t height;
 };
 
+union pixel {
+    alignas(4) uint32_t pixel;
+
+    alignas(4) struct {
+        uint8_t B;
+        uint8_t G;
+        uint8_t R;
+        uint8_t P;
+    };
+
+    alignas(4) uint8_t BGRP[4];
+    __attribute__((aligned(4))) uint8_t* restrict raw_BGRP;
+};
+
 static struct win32_bitmap_dimensions win32_get_bitmap_dimensions(HWND window) {
     RECT rect;
     GetClientRect(window, &rect);
@@ -20,23 +34,32 @@ static struct win32_bitmap_dimensions win32_get_bitmap_dimensions(HWND window) {
     return dims;
 }
 
+static constexpr uint32_t bytes_per_pixel = 4;
+
 struct win32_screen_bitmap_buffer {
     BITMAPINFO bitmapinfo;
-    void * restrict bitmapbuff;
+    void *restrict bitmapbuff;
 };
 
 static struct win32_screen_bitmap_buffer bitmap_buff;
 
-static void RenderStuff(const uint32_t XOffset, const uint32_t YOffset) {
-    constexpr uint32_t bytes_per_pixel = 4;
+static bool is_aligned(const void *restrict ptr, const size_t alignment) {
+    return (uintptr_t) ptr % alignment == 0;
+}
+
+static bool is_power_of_two(const uintptr_t x) {
+    return (x & x - 1) == 0;
+}
+
+static void render_gradient(const uint32_t XOffset, const uint32_t YOffset) {
     const uint32_t pitch = bytes_per_pixel * bitmap_buff.bitmapinfo.bmiHeader.biWidth;
-    uint8_t * restrict row = __builtin_assume_aligned(bitmap_buff.bitmapbuff, 32);
+    uint8_t *restrict row = bitmap_buff.bitmapbuff;
 
-    for (int y = 0; y < bitmap_buff.bitmapinfo.bmiHeader.biHeight; ++y) {
+    for (uint32_t y = 0; y < bitmap_buff.bitmapinfo.bmiHeader.biHeight; ++y) {
         // pixel color format: 00 RR GG BB
-        uint32_t * restrict pixel = __builtin_assume_aligned(row, 16);
+        uint32_t *restrict pixel = row;
 
-        for (int x = 0; x < bitmap_buff.bitmapinfo.bmiHeader.biWidth; ++x) {
+        for (uint32_t x = 0; x < bitmap_buff.bitmapinfo.bmiHeader.biWidth; ++x) {
             const uint8_t blue = x + XOffset;
             const uint8_t green = y + YOffset;
             constexpr uint8_t red = 0x80;
@@ -48,7 +71,7 @@ static void RenderStuff(const uint32_t XOffset, const uint32_t YOffset) {
     }
 }
 
-static void ResizeDIBSection(const uint32_t width, const uint32_t height) {
+static void resize_DIB_section(const uint32_t width, const uint32_t height) {
     if (bitmap_buff.bitmapbuff) {
         VirtualFree(bitmap_buff.bitmapbuff, 0, MEM_RELEASE);
     }
@@ -60,7 +83,6 @@ static void ResizeDIBSection(const uint32_t width, const uint32_t height) {
     bitmap_buff.bitmapinfo.bmiHeader.biBitCount = 32;
     bitmap_buff.bitmapinfo.bmiHeader.biCompression = BI_RGB;
 
-    constexpr uint32_t bytes_per_pixel = 4;
     bitmap_buff.bitmapbuff = VirtualAlloc(
         nullptr,
         width * height * bytes_per_pixel,
@@ -69,7 +91,7 @@ static void ResizeDIBSection(const uint32_t width, const uint32_t height) {
     );
 }
 
-static void RenderLoop(
+static void stretch_wnd(
     HDC hdc,
     const uint32_t width,
     const uint32_t height
@@ -102,40 +124,22 @@ LRESULT CALLBACK MainWndProc(
     switch (msg) {
         case WM_PAINT: {
             PAINTSTRUCT ps;
-            const HDC hdc = BeginPaint(wnd, &ps);
+            HDC hdc = BeginPaint(wnd, &ps);
 
             const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(wnd);
-            RenderLoop(hdc, dims.width, dims.height);
+            stretch_wnd(hdc, dims.width, dims.height);
 
             EndPaint(wnd, &ps);
         }
         break;
         case WM_SIZE: {
             const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(wnd);
-            ResizeDIBSection(dims.width, dims.height);
+            resize_DIB_section(dims.width, dims.height);
         }
         break;
-
-        case WM_CLOSE: {
-            printf("WM_CLOSE");
-
-            running = false;
-        }
-        break;
+        case WM_CLOSE:
         case WM_QUIT: {
-            printf("WM_QUIT");
-
             running = false;
-        }
-        break;
-
-        case WM_DESTROY: {
-            printf("WM_DESTROY");
-        }
-        break;
-
-        case WM_ACTIVATEAPP: {
-            printf("WM_ACTIVATEAPP");
         }
         break;
 
@@ -158,13 +162,13 @@ int WINAPI WinMain(
 
     WindowClass.lpfnWndProc = MainWndProc;
     WindowClass.hInstance = hInstance;
-    WindowClass.lpszClassName = "Yeey";
+    WindowClass.lpszClassName = "Window class";
 
     if (!RegisterClassA(&WindowClass)) {
         return 1;
     }
 
-    const HWND win_handle = CreateWindowExA(
+    HWND win_handle = CreateWindowExA(
         0,
         WindowClass.lpszClassName,
         "HandMade Hero",
@@ -186,19 +190,20 @@ int WINAPI WinMain(
     MSG msg;
     running = true;
 
-    int x = 0; int y = 0;
+    int x = 0;
+    int y = 0;
     while (running) {
         while (PeekMessageA(&msg, win_handle, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
 
-        RenderStuff(x, y);
+        render_gradient(x, y);
 
-        const HDC hdc = GetDC(win_handle);
+        HDC hdc = GetDC(win_handle);
         const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(win_handle);
 
-        RenderLoop(hdc, dims.width, dims.height);
+        stretch_wnd(hdc, dims.width, dims.height);
 
         ReleaseDC(win_handle, hdc);
         ++x;
