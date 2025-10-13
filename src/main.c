@@ -23,7 +23,7 @@ union pixel {
     __attribute__((aligned(4))) uint8_t* restrict raw_BGRP;
 };
 
-static struct win32_bitmap_dimensions win32_get_bitmap_dimensions(HWND window) {
+static struct win32_bitmap_dimensions win32_get_bitmap_dimensions(const HWND window) {
     RECT rect;
     GetClientRect(window, &rect);
 
@@ -37,6 +37,7 @@ static struct win32_bitmap_dimensions win32_get_bitmap_dimensions(HWND window) {
 static constexpr uint32_t bytes_per_pixel = 4;
 
 struct win32_screen_bitmap_buffer {
+    uint32_t pitch;
     BITMAPINFO bitmapinfo;
     void *restrict bitmapbuff;
 };
@@ -51,9 +52,12 @@ static bool is_power_of_two(const uintptr_t x) {
     return (x & x - 1) == 0;
 }
 
+static void set_pixel(const uint32_t x, const uint32_t y, const uint8_t R, const uint8_t G, const uint8_t B) {
+    uint32_t *restrict pixel = bitmap_buff.bitmapbuff;
+    pixel[y * bitmap_buff.pitch + x] = R << 16 | G << 8 | B;
+}
 
 static void render_gradient(const uint32_t x_offset, const uint32_t y_offset) {
-    const uint32_t pitch = bytes_per_pixel * bitmap_buff.bitmapinfo.bmiHeader.biWidth;
     uint8_t * restrict row = __builtin_assume_aligned(bitmap_buff.bitmapbuff, 4);
 
     for (uint32_t y = 0; y < bitmap_buff.bitmapinfo.bmiHeader.biHeight; ++y) {
@@ -68,7 +72,7 @@ static void render_gradient(const uint32_t x_offset, const uint32_t y_offset) {
             *pixel++ = red << 16 | green << 8 | blue;
         }
 
-        row += pitch;
+        row += bitmap_buff.pitch;
     }
 }
 
@@ -83,6 +87,7 @@ static void resize_DIB_section(const uint32_t width, const uint32_t height) {
     bitmap_buff.bitmapinfo.bmiHeader.biPlanes = 1;
     bitmap_buff.bitmapinfo.bmiHeader.biBitCount = 32;
     bitmap_buff.bitmapinfo.bmiHeader.biCompression = BI_RGB;
+    bitmap_buff.pitch = bytes_per_pixel * width;
 
     bitmap_buff.bitmapbuff = VirtualAlloc(
         nullptr,
@@ -93,7 +98,7 @@ static void resize_DIB_section(const uint32_t width, const uint32_t height) {
 }
 
 static void stretch_wnd(
-    HDC hdc,
+    const HDC hdc,
     const uint32_t width,
     const uint32_t height
 ) {
@@ -115,7 +120,7 @@ static void stretch_wnd(
 }
 
 LRESULT CALLBACK MainWndProc(
-    HWND wnd,
+    const HWND wnd,
     const UINT msg,
     const WPARAM wparam,
     const LPARAM lparam
@@ -154,7 +159,7 @@ LRESULT CALLBACK MainWndProc(
 }
 
 int WINAPI WinMain(
-    HINSTANCE hInstance,
+    const HINSTANCE hInstance,
     HINSTANCE hPrevInstance,
     PSTR lpCmdLine,
     int nShowCmd
@@ -203,6 +208,7 @@ int WINAPI WinMain(
         }
 
         render_gradient(x, y);
+        // set_pixel(100, 5, 0xFF, 0x00, 0xEE);
 
         const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(win_handle);
 
