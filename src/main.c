@@ -1,6 +1,7 @@
 ﻿#include <stdint.h>
 #include <stdio.h>
 #include <windows.h>
+#include "cglm/cglm.h"
 
 static bool running = false;
 
@@ -20,7 +21,7 @@ union pixel {
     } __attribute__((packed));
 
     alignas(4) uint8_t BGRP[4];
-    __attribute__((aligned(4))) uint8_t* restrict raw_BGRP;
+    __attribute__((aligned(4))) uint8_t *restrict raw_BGRP;
 };
 
 static struct win32_bitmap_dimensions win32_get_bitmap_dimensions(const HWND window) {
@@ -52,17 +53,41 @@ static bool is_power_of_two(const uintptr_t x) {
     return (x & x - 1) == 0;
 }
 
+static void clean_buff() {
+    memset(bitmap_buff.bitmapbuff, 0, bitmap_buff.bitmapinfo.bmiHeader.biWidth * bitmap_buff.bitmapinfo.bmiHeader.biHeight * bytes_per_pixel);
+}
+
 static void set_pixel(const uint32_t x, const uint32_t y, const uint8_t R, const uint8_t G, const uint8_t B) {
     uint32_t *restrict pixel = bitmap_buff.bitmapbuff;
     pixel[y * bitmap_buff.pitch + x] = R << 16 | G << 8 | B;
 }
 
+static void render_line(int32_t x0, int32_t y0, const int32_t x1, const int32_t y1) {
+    const int32_t dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    const int32_t dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int32_t err = dx + dy;
+
+    while (true) {
+        set_pixel(x0, y0, 0xFF, 0x00, 0x00);
+        if (x0 == x1 && y0 == y1) break;
+        const int e2 = 2 * err;
+        if (e2 >= dy) {
+            err += dy;
+            x0 += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
 static void render_gradient(const uint32_t x_offset, const uint32_t y_offset) {
-    uint8_t * restrict row = __builtin_assume_aligned(bitmap_buff.bitmapbuff, 4);
+    uint8_t *restrict row = bitmap_buff.bitmapbuff;
 
     for (uint32_t y = 0; y < bitmap_buff.bitmapinfo.bmiHeader.biHeight; ++y) {
         // pixel color format: 00 RR GG BB
-        uint32_t * restrict pixel = __builtin_assume_aligned(row, 4);
+        uint32_t *restrict pixel = (uint32_t * restrict) row;
 
         for (uint32_t x = 0; x < bitmap_buff.bitmapinfo.bmiHeader.biWidth; ++x) {
             const uint8_t blue = x + x_offset;
@@ -158,6 +183,15 @@ LRESULT CALLBACK MainWndProc(
     return res;
 }
 
+static void move_line(ivec2* point1) {
+    if (bitmap_buff.bitmapinfo.bmiHeader.biWidth < *point1[0]) {
+        *point1[0] = *point1[0] + 1;
+    }
+    if (bitmap_buff.bitmapinfo.bmiHeader.biHeight < *point1[0]) {
+        *point1[1] = *point1[1] + 1;
+    }
+}
+
 int WINAPI WinMain(
     const HINSTANCE hInstance,
     HINSTANCE hPrevInstance,
@@ -199,24 +233,24 @@ int WINAPI WinMain(
     MSG msg;
     running = true;
 
-    int x = 0;
-    int y = 0;
+    ivec2 point0 = {0, 0};
+    ivec2 point1 = {0, 0};
+
+    const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(win_handle);
+
     while (running) {
         while (PeekMessageA(&msg, win_handle, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
+        move_line(&point1);
 
-        render_gradient(x, y);
-        // set_pixel(100, 5, 0xFF, 0x00, 0xEE);
 
-        const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(win_handle);
+        clean_buff();
+        render_line(point0[0], point0[1], point1[0], point1[1]);
 
         stretch_wnd(hdc, dims.width, dims.height);
-
         ReleaseDC(win_handle, hdc);
-        ++x;
-        ++y;
     }
 
     return 0;
