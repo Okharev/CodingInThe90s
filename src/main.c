@@ -1,222 +1,173 @@
-﻿#include <stdint.h>
-#include <stdio.h>
-#include <windows.h>
+﻿#include <windows.h>
+#include "renderer.h"
+#include "win32_platform.h"
 
-static bool running = false;
+static bool g_running = FALSE;
+static graphics_buffer g_backbuffer;
 
-struct win32_bitmap_dimensions {
-    uint32_t width;
-    uint32_t height;
-};
-
-union pixel {
-    alignas(4) uint32_t pixel;
-
-    alignas(4) struct {
-        uint8_t B;
-        uint8_t G;
-        uint8_t R;
-        uint8_t P;
-    } __attribute__((packed));
-
-    alignas(4) uint8_t BGRP[4];
-    __attribute__((aligned(4))) uint8_t* restrict raw_BGRP;
-};
-
-static struct win32_bitmap_dimensions win32_get_bitmap_dimensions(const HWND window) {
-    RECT rect;
-    GetClientRect(window, &rect);
-
-    struct win32_bitmap_dimensions dims;
-    dims.width = rect.right - rect.left;
-    dims.height = rect.bottom - rect.top;
-
-    return dims;
-}
-
-static constexpr uint32_t bytes_per_pixel = 4;
-
-struct win32_screen_bitmap_buffer {
-    uint32_t pitch;
-    BITMAPINFO bitmapinfo;
-    void *restrict bitmapbuff;
-};
-
-static struct win32_screen_bitmap_buffer bitmap_buff;
-
-static bool is_aligned(const void *restrict ptr, const size_t alignment) {
-    return (uintptr_t) ptr % alignment == 0;
-}
-
-static bool is_power_of_two(const uintptr_t x) {
-    return (x & x - 1) == 0;
-}
-
-static void set_pixel(const uint32_t x, const uint32_t y, const uint8_t R, const uint8_t G, const uint8_t B) {
-    uint32_t *restrict pixel = bitmap_buff.bitmapbuff;
-    pixel[y * bitmap_buff.pitch + x] = R << 16 | G << 8 | B;
-}
-
-static void render_gradient(const uint32_t x_offset, const uint32_t y_offset) {
-    uint8_t * restrict row = __builtin_assume_aligned(bitmap_buff.bitmapbuff, 4);
-
-    for (uint32_t y = 0; y < bitmap_buff.bitmapinfo.bmiHeader.biHeight; ++y) {
-        // pixel color format: 00 RR GG BB
-        uint32_t * restrict pixel = __builtin_assume_aligned(row, 4);
-
-        for (uint32_t x = 0; x < bitmap_buff.bitmapinfo.bmiHeader.biWidth; ++x) {
-            const uint8_t blue = x + x_offset;
-            const uint8_t green = y + y_offset;
-            constexpr uint8_t red = 0x80;
-
-            *pixel++ = red << 16 | green << 8 | blue;
-        }
-
-        row += bitmap_buff.pitch;
-    }
-}
-
-static void resize_DIB_section(const uint32_t width, const uint32_t height) {
-    if (bitmap_buff.bitmapbuff) {
-        VirtualFree(bitmap_buff.bitmapbuff, 0, MEM_RELEASE);
-    }
-
-    bitmap_buff.bitmapinfo.bmiHeader.biSize = sizeof(bitmap_buff.bitmapinfo.bmiHeader);
-    bitmap_buff.bitmapinfo.bmiHeader.biWidth = width;
-    bitmap_buff.bitmapinfo.bmiHeader.biHeight = height;
-    bitmap_buff.bitmapinfo.bmiHeader.biPlanes = 1;
-    bitmap_buff.bitmapinfo.bmiHeader.biBitCount = 32;
-    bitmap_buff.bitmapinfo.bmiHeader.biCompression = BI_RGB;
-    bitmap_buff.pitch = bytes_per_pixel * width;
-
-    bitmap_buff.bitmapbuff = VirtualAlloc(
-        nullptr,
-        width * height * bytes_per_pixel,
-        MEM_COMMIT | MEM_RESERVE,
-        PAGE_READWRITE
-    );
-}
-
-static void stretch_wnd(
-    const HDC hdc,
-    const uint32_t width,
-    const uint32_t height
-) {
-    StretchDIBits(
-        hdc,
-        0,
-        0,
-        bitmap_buff.bitmapinfo.bmiHeader.biWidth,
-        bitmap_buff.bitmapinfo.bmiHeader.biHeight,
-        0,
-        0,
-        width,
-        height,
-        bitmap_buff.bitmapbuff,
-        &bitmap_buff.bitmapinfo,
-        DIB_RGB_COLORS,
-        SRCCOPY
-    );
-}
-
-LRESULT CALLBACK MainWndProc(
-    const HWND wnd,
-    const UINT msg,
-    const WPARAM wparam,
-    const LPARAM lparam
-) {
-    LRESULT res = 0;
-
+LRESULT CALLBACK main_window_proc(HWND wnd, const UINT msg, const WPARAM w_param, const LPARAM l_param) {
     switch (msg) {
+        case WM_SIZE: {
+            RECT rect;
+            GetClientRect(wnd, &rect);
+            win32_resize_dib_section(&g_backbuffer, rect.right - rect.left, rect.bottom - rect.top);
+            return 0;
+        }
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(wnd, &ps);
-
-            const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(wnd);
-            stretch_wnd(hdc, dims.width, dims.height);
-
+            RECT rect;
+            GetClientRect(wnd, &rect);
+            win32_display_buffer(&g_backbuffer, hdc, rect.right - rect.left, rect.bottom - rect.top);
             EndPaint(wnd, &ps);
+            return 0;
         }
-        break;
-        case WM_SIZE: {
-            const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(wnd);
-            resize_DIB_section(dims.width, dims.height);
-        }
-        break;
         case WM_CLOSE:
-        case WM_QUIT: {
-            running = false;
+        case WM_DESTROY: {
+            g_running = false;
+            return 0;
         }
-        break;
-
         default: {
-            res = DefWindowProcA(wnd, msg, wparam, lparam);
+            return DefWindowProcA(wnd, msg, w_param, l_param);
         }
-        break;
     }
-
-    return res;
 }
 
-int WINAPI WinMain(
-    const HINSTANCE hInstance,
-    HINSTANCE hPrevInstance,
-    PSTR lpCmdLine,
-    int nShowCmd
-) {
-    WNDCLASS WindowClass = {0};
+void init_cube_mesh(model *cube_model) {
+    constexpr uint32_t CUBE_VERTEX_COUNT = 36;
+    cube_model->vertex_size = CUBE_VERTEX_COUNT;
 
-    WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-    WindowClass.lpfnWndProc = MainWndProc;
-    WindowClass.hInstance = hInstance;
-    WindowClass.lpszClassName = "Window class";
+    const vec3 corners[8] = {
+        {-0.5f, -0.5f, 0.5f},
+        {0.5f, -0.5f, 0.5f},
+        {0.5f, 0.5f, 0.5f},
+        {-0.5f, 0.5f, 0.5f},
+        {0.5f, -0.5f, -0.5f},
+        {-0.5f, -0.5f, -0.5f},
+        {-0.5f, 0.5f, -0.5f},
+        {0.5f, 0.5f, -0.5f}
+    };
 
-    if (!RegisterClassA(&WindowClass)) {
+    const vec4 vertices[CUBE_VERTEX_COUNT] = {
+        // Front Face
+        {corners[0][0], corners[0][1], corners[0][2], 1.0f},
+        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
+        {corners[2][0], corners[2][1], corners[2][2], 1.0f},
+        {corners[2][0], corners[2][1], corners[2][2], 1.0f},
+        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
+        {corners[0][0], corners[0][1], corners[0][2], 1.0f},
+
+        // Back Face
+        {corners[4][0], corners[4][1], corners[4][2], 1.0f},
+        {corners[5][0], corners[5][1], corners[5][2], 1.0f},
+        {corners[6][0], corners[6][1], corners[6][2], 1.0f},
+        {corners[6][0], corners[6][1], corners[6][2], 1.0f},
+        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
+        {corners[4][0], corners[4][1], corners[4][2], 1.0f},
+
+        // Left Face
+        {corners[5][0], corners[5][1], corners[5][2], 1.0f},
+        {corners[0][0], corners[0][1], corners[0][2], 1.0f},
+        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
+        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
+        {corners[6][0], corners[6][1], corners[6][2], 1.0f},
+        {corners[5][0], corners[5][1], corners[5][2], 1.0f},
+
+        // Right Face
+        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
+        {corners[4][0], corners[4][1], corners[4][2], 1.0f},
+        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
+        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
+        {corners[2][0], corners[2][1], corners[2][2], 1.0f},
+        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
+
+        // Top Face
+        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
+        {corners[2][0], corners[2][1], corners[2][2], 1.0f},
+        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
+        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
+        {corners[6][0], corners[6][1], corners[6][2], 1.0f},
+        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
+
+        // Bottom Face
+        {corners[5][0], corners[5][1], corners[5][2], 1.0f},
+        {corners[4][0], corners[4][1], corners[4][2], 1.0f},
+        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
+        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
+        {corners[0][0], corners[0][1], corners[0][2], 1.0f},
+        {corners[5][0], corners[5][1], corners[5][2], 1.0f}
+    };
+
+    cube_model->vertex = malloc(sizeof(vec4) * CUBE_VERTEX_COUNT);
+
+    if (cube_model->vertex) {
+        memcpy(cube_model->vertex, vertices, sizeof(vec4) * CUBE_VERTEX_COUNT);
+    }
+}
+
+void init_camera_for_cube(camera *cam, float window_width, float window_height) {
+    constexpr vec3 cam_pos = {5.0f, 5.0f, 5.0f};
+    memcpy(cam->position, cam_pos, sizeof(vec3));
+    glm_quat_forp(cam_pos, GLM_VEC3_ZERO, ((vec3){0.0f, 0.0f, 1.0f}), cam->rotation);
+
+    cam->FOV = 45.0f;
+    cam->aspect = window_width / window_height;
+    cam->near_clip = 0.1f;
+    cam->far_clip = 100.0f;
+    cam->projection_is_dirty = true;
+    cam->view_is_dirty = true;
+}
+
+int WINAPI WinMain(HINSTANCE instance, [[maybe_unused]] HINSTANCE hPrevInstance, [[maybe_unused]] PSTR lpCmdLine,
+                   [[maybe_unused]] int nShowCmd) {
+    WNDCLASSA window_class = {0};
+    window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    window_class.lpfnWndProc = main_window_proc;
+    window_class.hInstance = instance;
+    window_class.lpszClassName = "CExampleWindowClass";
+
+    if (!RegisterClassA(&window_class)) {
         return 1;
     }
 
-    HWND win_handle = CreateWindowExA(
-        0,
-        WindowClass.lpszClassName,
-        "HandMade Hero",
+    HWND window = CreateWindowExA(
+        0, window_class.lpszClassName, "C renderer",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        nullptr,
-        nullptr,
-        hInstance,
-        nullptr
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        0, 0, instance, 0
     );
 
-    if (!win_handle) {
-        return 0;
+    if (!window) {
+        return 1;
     }
 
-    HDC hdc = GetDC(win_handle);
+    g_running = true;
 
-    MSG msg;
-    running = true;
+    HDC hdc = GetDC(window);
 
-    int x = 0;
-    int y = 0;
-    while (running) {
-        while (PeekMessageA(&msg, win_handle, 0, 0, PM_REMOVE)) {
+    model my_cube;
+    init_cube_mesh(&my_cube);
+
+    camera my_camera;
+    init_camera_for_cube(&my_camera, g_backbuffer.width, g_backbuffer.height);
+
+    while (g_running) {
+        MSG msg;
+        while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) {
+                g_running = false;
+            }
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
 
-        render_gradient(x, y);
-        // set_pixel(100, 5, 0xFF, 0x00, 0xEE);
+        render_obj(my_cube, GLM_VEC3_ONE, GLM_QUAT_IDENTITY, GLM_VEC3_ONE, &my_camera, &g_backbuffer);
 
-        const struct win32_bitmap_dimensions dims = win32_get_bitmap_dimensions(win_handle);
-
-        stretch_wnd(hdc, dims.width, dims.height);
-
-        ReleaseDC(win_handle, hdc);
-        ++x;
-        ++y;
+        RECT rect;
+        GetClientRect(window, &rect);
+        win32_display_buffer(&g_backbuffer, hdc, rect.right - rect.left, rect.bottom - rect.top);
+        ReleaseDC(window, hdc);
     }
 
     return 0;

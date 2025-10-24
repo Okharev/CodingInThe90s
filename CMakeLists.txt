@@ -48,7 +48,11 @@ FetchContent_MakeAvailable(simde raylib flecs cglm)
 
 # --- Project Sources ---
 
-add_executable(MyC23Project src/main.c)
+add_executable(MyC23Project src/main.c
+        src/renderer.c
+        src/renderer.h
+        src/win32_platform.c
+        src/win32_platform.h)
 
 # --- Linking Libraries ---
 
