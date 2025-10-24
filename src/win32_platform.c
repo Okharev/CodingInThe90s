@@ -23,8 +23,12 @@ void win32_resize_dib_section(graphics_buffer *buffer, const uint32_t width, con
     buffer->memory = VirtualAlloc(0, buffer->pitch * height, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
-void win32_display_buffer(const graphics_buffer *buffer, HDC device_context, const uint32_t window_width,
-                          const uint32_t window_height) {
+void win32_display_buffer(
+    const graphics_buffer *buffer,
+    HDC device_context,
+    const uint32_t window_width,
+    const uint32_t window_height
+) {
     BITMAPINFO info = {0};
     info.bmiHeader.biSize = sizeof(info.bmiHeader);
     info.bmiHeader.biWidth = buffer->width;

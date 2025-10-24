@@ -20,7 +20,12 @@ LRESULT CALLBACK main_window_proc(HWND wnd, const UINT msg, const WPARAM w_param
             HDC hdc = BeginPaint(wnd, &ps);
             RECT rect;
             GetClientRect(wnd, &rect);
-            win32_display_buffer(&g_backbuffer, hdc, rect.right - rect.left, rect.bottom - rect.top);
+            win32_display_buffer(
+                &g_backbuffer,
+                hdc,
+                rect.right - rect.left,
+                rect.bottom - rect.top
+            );
             EndPaint(wnd, &ps);
             return 0;
         }
@@ -36,75 +41,26 @@ LRESULT CALLBACK main_window_proc(HWND wnd, const UINT msg, const WPARAM w_param
 }
 
 void init_cube_mesh(model *cube_model) {
-    constexpr uint32_t CUBE_VERTEX_COUNT = 36;
-    cube_model->vertex_size = CUBE_VERTEX_COUNT;
-
-    const vec3 corners[8] = {
-        {-0.5f, -0.5f, 0.5f},
-        {0.5f, -0.5f, 0.5f},
-        {0.5f, 0.5f, 0.5f},
-        {-0.5f, 0.5f, 0.5f},
-        {0.5f, -0.5f, -0.5f},
-        {-0.5f, -0.5f, -0.5f},
-        {-0.5f, 0.5f, -0.5f},
-        {0.5f, 0.5f, -0.5f}
+    constexpr uint32_t UNIQUE_VERTEX_COUNT = 8;
+    const vec4 unique_vertices[UNIQUE_VERTEX_COUNT] = {
+        {-0.5f, -0.5f,  0.5f, 1.0f}, { 0.5f, -0.5f,  0.5f, 1.0f}, { 0.5f,  0.5f,  0.5f, 1.0f}, {-0.5f,  0.5f,  0.5f, 1.0f},
+        {-0.5f, -0.5f, -0.5f, 1.0f}, { 0.5f, -0.5f, -0.5f, 1.0f}, { 0.5f,  0.5f, -0.5f, 1.0f}, {-0.5f,  0.5f, -0.5f, 1.0f}
+    };
+    constexpr uint32_t CUBE_INDEX_COUNT = 36;
+    const uint32_t cube_indices[CUBE_INDEX_COUNT] = {
+        0, 2, 1, 0, 3, 2, 5, 7, 4, 5, 6, 7, 4, 3, 0, 4, 7, 3,
+        5, 2, 6, 5, 1, 2, 3, 6, 2, 3, 7, 6, 0, 1, 5, 0, 5, 4
     };
 
-    const vec4 vertices[CUBE_VERTEX_COUNT] = {
-        // Front Face
-        {corners[0][0], corners[0][1], corners[0][2], 1.0f},
-        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
-        {corners[2][0], corners[2][1], corners[2][2], 1.0f},
-        {corners[2][0], corners[2][1], corners[2][2], 1.0f},
-        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
-        {corners[0][0], corners[0][1], corners[0][2], 1.0f},
+    cube_model->vertex_count = UNIQUE_VERTEX_COUNT;
+    cube_model->index_count = CUBE_INDEX_COUNT;
+    cube_model->vertices = malloc(sizeof(vec4) * UNIQUE_VERTEX_COUNT);
+    cube_model->indices = malloc(sizeof(uint32_t) * CUBE_INDEX_COUNT);
+    memcpy(cube_model->vertices, unique_vertices, sizeof(vec4) * UNIQUE_VERTEX_COUNT);
+    memcpy(cube_model->indices, cube_indices, sizeof(uint32_t) * CUBE_INDEX_COUNT);
 
-        // Back Face
-        {corners[4][0], corners[4][1], corners[4][2], 1.0f},
-        {corners[5][0], corners[5][1], corners[5][2], 1.0f},
-        {corners[6][0], corners[6][1], corners[6][2], 1.0f},
-        {corners[6][0], corners[6][1], corners[6][2], 1.0f},
-        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
-        {corners[4][0], corners[4][1], corners[4][2], 1.0f},
-
-        // Left Face
-        {corners[5][0], corners[5][1], corners[5][2], 1.0f},
-        {corners[0][0], corners[0][1], corners[0][2], 1.0f},
-        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
-        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
-        {corners[6][0], corners[6][1], corners[6][2], 1.0f},
-        {corners[5][0], corners[5][1], corners[5][2], 1.0f},
-
-        // Right Face
-        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
-        {corners[4][0], corners[4][1], corners[4][2], 1.0f},
-        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
-        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
-        {corners[2][0], corners[2][1], corners[2][2], 1.0f},
-        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
-
-        // Top Face
-        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
-        {corners[2][0], corners[2][1], corners[2][2], 1.0f},
-        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
-        {corners[7][0], corners[7][1], corners[7][2], 1.0f},
-        {corners[6][0], corners[6][1], corners[6][2], 1.0f},
-        {corners[3][0], corners[3][1], corners[3][2], 1.0f},
-
-        // Bottom Face
-        {corners[5][0], corners[5][1], corners[5][2], 1.0f},
-        {corners[4][0], corners[4][1], corners[4][2], 1.0f},
-        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
-        {corners[1][0], corners[1][1], corners[1][2], 1.0f},
-        {corners[0][0], corners[0][1], corners[0][2], 1.0f},
-        {corners[5][0], corners[5][1], corners[5][2], 1.0f}
-    };
-
-    cube_model->vertex = malloc(sizeof(vec4) * CUBE_VERTEX_COUNT);
-
-    if (cube_model->vertex) {
-        memcpy(cube_model->vertex, vertices, sizeof(vec4) * CUBE_VERTEX_COUNT);
-    }
+    // Call the pre-processing function
+    model_build_unique_edges(cube_model);
 }
 
 void init_camera_for_cube(camera *cam, float window_width, float window_height) {
@@ -120,8 +76,12 @@ void init_camera_for_cube(camera *cam, float window_width, float window_height) 
     cam->view_is_dirty = true;
 }
 
-int WINAPI WinMain(HINSTANCE instance, [[maybe_unused]] HINSTANCE hPrevInstance, [[maybe_unused]] PSTR lpCmdLine,
-                   [[maybe_unused]] int nShowCmd) {
+int WINAPI WinMain(
+    HINSTANCE instance,
+    HINSTANCE hPrevInstance,
+    PSTR lpCmdLine,
+    int nShowCmd
+) {
     WNDCLASSA window_class = {0};
     window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     window_class.lpfnWndProc = main_window_proc;
@@ -151,6 +111,11 @@ int WINAPI WinMain(HINSTANCE instance, [[maybe_unused]] HINSTANCE hPrevInstance,
     model my_cube;
     init_cube_mesh(&my_cube);
 
+    mat4 cube_rot = GLM_MAT4_IDENTITY_INIT;
+
+    vec3 cube_pos = GLM_VEC3_ZERO_INIT;
+    vec3 velocity = {0.001f, 0.001f, 0.001f};
+
     camera my_camera;
     init_camera_for_cube(&my_camera, g_backbuffer.width, g_backbuffer.height);
 
@@ -165,11 +130,35 @@ int WINAPI WinMain(HINSTANCE instance, [[maybe_unused]] HINSTANCE hPrevInstance,
             DispatchMessageA(&msg);
         }
 
-        render_obj(my_cube, GLM_VEC3_ONE, GLM_QUAT_IDENTITY, GLM_VEC3_ONE, &my_camera, &g_backbuffer);
+        if (cube_pos[0] > 3.0f || cube_pos[0] < -3.0f) {
+            velocity[0] = -velocity[0];
+        }
+        if (cube_pos[1] > 3.0f || cube_pos[1] < -3.0f) {
+            velocity[1] = -velocity[1];
+        }
+        if (cube_pos[2] > 3.0f || cube_pos[2] < -3.0f) {
+            velocity[2] = -velocity[2];
+        }
+
+        glm_rotate_y(cube_rot, 0.001f, cube_rot);
+        glm_rotate_x(cube_rot, 0.001f, cube_rot);
+
+        clean_buff(&g_backbuffer);
+
+        versor rot;
+        glm_mat4_quat(cube_rot, rot);
+        render_obj_wire(my_cube, cube_pos, rot, GLM_VEC3_ONE, &my_camera, &g_backbuffer);
+
+        glm_vec3_add(cube_pos, velocity, cube_pos);
 
         RECT rect;
         GetClientRect(window, &rect);
-        win32_display_buffer(&g_backbuffer, hdc, rect.right - rect.left, rect.bottom - rect.top);
+        win32_display_buffer(
+            &g_backbuffer,
+            hdc,
+            rect.right - rect.left,
+            rect.bottom - rect.top
+        );
         ReleaseDC(window, hdc);
     }
 
