@@ -1,4 +1,6 @@
-﻿#include <windows.h>
+#include <stdio.h>
+#include <windows.h>
+#include "cglm/cglm.h"
 #include "renderer.h"
 #include "win32_platform.h"
 
@@ -158,6 +160,7 @@ int WINAPI WinMain(HINSTANCE instance, [[maybe_unused]] HINSTANCE hPrevInstance,
             if (msg.message == WM_QUIT) {
                 g_running = false;
             }
+
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
