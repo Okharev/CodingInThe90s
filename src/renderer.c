@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+
+
 #define OUTCODE_RIGHT  1  // 000001
 #define OUTCODE_LEFT   2  // 000010
 #define OUTCODE_TOP    4  // 000100
@@ -19,6 +21,70 @@ static inline int32_t compute_outcode(const vec3 v) {
     if (v[2] < -1.0f) code |= OUTCODE_NEAR;
     return code;
 }
+
+#define max(a,b)             \
+({                           \
+__typeof__ (a) _a = (a); \
+__typeof__ (b) _b = (b); \
+_a > _b ? _a : _b;       \
+})
+
+#define min(a,b)             \
+({                           \
+__typeof__ (a) _a = (a); \
+__typeof__ (b) _b = (b); \
+_a < _b ? _a : _b;       \
+})
+
+static inline void get_raster_triangle_AABB(const vec3 vone, const vec3 vtwo, const vec3 vthree, int32_t dest[4]) {
+    // Find the min and max, and cast to integer to define the pixel boundary.
+    // Add 0.5f for rounding to the nearest integer instead of truncating.
+    const int32_t x0 = (int32_t)(vone[0] + 0.5f);
+    const int32_t y0 = (int32_t)(vone[1] + 0.5f);
+    const int32_t x1 = (int32_t)(vtwo[0] + 0.5f);
+    const int32_t y1 = (int32_t)(vtwo[1] + 0.5f);
+    const int32_t x2 = (int32_t)(vthree[0] + 0.5f);
+    const int32_t y2 = (int32_t)(vthree[1] + 0.5f);
+
+    dest[0] = min(x0, min(x1, x2)); // xmin
+    dest[1] = min(y0, min(y1, y2)); // ymin
+    dest[2] = max(x0, max(x1, x2)); // xmax
+    dest[3] = max(y0, max(y1, y2)); // ymax
+}
+
+static inline int32_t get_determinant(const int32_t x0, const int32_t y0, const int32_t x1, const int32_t y1, const int32_t xp, const int32_t yp) {
+    // This formula is correct, just needs consistent integer types.
+    return (x1 - x0) * (yp - y0) - (y1 - y0) * (xp - x0);
+}
+
+
+static void fill_triangle(const graphics_buffer * restrict buff,
+                          const ivec3 v0, const ivec3 v1, const ivec3 v2,
+                          const int32_t aabb[4], // AABB is now [xmin, ymin, xmax, ymax]
+                          const uint8_t r, const uint8_t g, const uint8_t b) {
+
+    // Unpack AABB for clarity
+    const int32_t x_min = aabb[0];
+    const int32_t y_min = aabb[1];
+    const int32_t x_max = aabb[2];
+    const int32_t y_max = aabb[3];
+
+    // Corrected loops: iterate from min to max (inclusive)
+    for (int32_t y = y_min; y <= y_max; ++y) {
+        for (int32_t x = x_min; x <= x_max; ++x) {
+
+            // Calculate determinants using integer coordinates
+            const int32_t det0 = get_determinant(v0[0], v0[1], v1[0], v1[1], x, y);
+            const int32_t det1 = get_determinant(v1[0], v1[1], v2[0], v2[1], x, y);
+            const int32_t det2 = get_determinant(v2[0], v2[1], v0[0], v0[1], x, y);
+
+            if (det0 >= 0 && det1 >= 0 && det2 >= 0) {
+                set_pixel(buff, x, y, r, g, b);
+            }
+        }
+    }
+}
+
 
 static inline void get_cam_view_mat4(camera cam, mat4 dest) {
     mat4 rotation_mat = GLM_MAT4_IDENTITY_INIT;
@@ -97,10 +163,6 @@ void set_pixel(
     const uint8_t g,
     const uint8_t b
 ) {
-    if (x >= buffer->width || y >= buffer->height) {
-        return;
-    }
-
     uint32_t * restrict pixels = buffer->memory;
     pixels[y * buffer->width + x] = (r << 16) | (g << 8) | b;
 }
@@ -381,5 +443,146 @@ void render_gradient(const graphics_buffer *restrict buffer, const uint32_t x_of
             *pixel++ = red << 16 | green << 8 | blue;
         }
         row += buffer->pitch;
+    }
+}
+
+void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera * restrict cam, const graphics_buffer * restrict buff) {
+    // --- 1. Calculate the Model-View-Projection (MVP) matrix (once per object) ---
+    mat4 model_matrix; {
+        mat4 rotation_mat = GLM_MAT4_IDENTITY_INIT;
+        mat4 translate_mat = GLM_MAT4_IDENTITY_INIT;
+        mat4 scale_mat = GLM_MAT4_IDENTITY_INIT;
+
+        // Create individual transform matrices
+        glm_quat_rotate(rotation_mat, rot, rotation_mat);
+        glm_translate_make(translate_mat, pos);
+        glm_scale_make(scale_mat, scale);
+
+        // Combine them in standard T * R * S order
+        mat4 rs_mat;
+        glm_mul(rotation_mat, scale_mat, rs_mat);
+        glm_mul(translate_mat, rs_mat, model_matrix);
+    }
+
+    mat4 mvp_mat;
+    glm_mat4_mul(*camera_get_pv_matrix(cam), model_matrix, mvp_mat);
+
+    // Pre-calculate loop-invariant values for the viewport transform
+    const float half_width = 0.5f * (float) buff->width;
+    const float half_height = 0.5f * (float) buff->height;
+
+    // --- 2. Process each triangle of the model ---
+    for (int i = 0; i < model.index_count; i += 3) {
+        const uint32_t i0 = model.indices[i];
+        const uint32_t i1 = model.indices[i + 1];
+        const uint32_t i2 = model.indices[i + 2];
+
+        // --- 2a. Transform vertices from Model Space to Clip Space ---
+        vec4 clip_v0, clip_v1, clip_v2;
+        glm_mat4_mulv(mvp_mat, model.vertices[i0], clip_v0);
+        glm_mat4_mulv(mvp_mat, model.vertices[i1], clip_v1);
+        glm_mat4_mulv(mvp_mat, model.vertices[i2], clip_v2);
+
+        // --- 2b. CRITICAL: Near-Plane Culling ---
+        // Discard any triangle with a vertex behind or on the camera's near plane.
+        if (clip_v0[3] <= 0.0f || clip_v1[3] <= 0.0f || clip_v2[3] <= 0.0f) {
+            continue;
+        }
+
+        // --- 2c. Perspective Divide (to Normalized Device Coordinates) ---
+        vec3 ndc_v0, ndc_v1, ndc_v2; {
+            // Use reciprocal multiplication (faster than division)
+            const float recip_w0 = 1.0f / clip_v0[3];
+            ndc_v0[0] = clip_v0[0] * recip_w0;
+            ndc_v0[1] = clip_v0[1] * recip_w0;
+            ndc_v0[2] = clip_v0[2] * recip_w0;
+
+            const float recip_w1 = 1.0f / clip_v1[3];
+            ndc_v1[0] = clip_v1[0] * recip_w1;
+            ndc_v1[1] = clip_v1[1] * recip_w1;
+            ndc_v1[2] = clip_v1[2] * recip_w1;
+
+            const float recip_w2 = 1.0f / clip_v2[3];
+            ndc_v2[0] = clip_v2[0] * recip_w2;
+            ndc_v2[1] = clip_v2[1] * recip_w2;
+            ndc_v2[2] = clip_v2[2] * recip_w2;
+        }
+
+        // --- 2d. OPTIMIZATION: Back-Face Culling ---
+        // Discard triangles that are facing away from the camera.
+        {
+            vec3 edge1, edge2;
+            glm_vec3_sub(ndc_v1, ndc_v0, edge1);
+            glm_vec3_sub(ndc_v2, ndc_v0, edge2);
+            vec3 normal;
+            glm_vec3_cross(edge1, edge2, normal);
+            if (normal[2] > 0.0f) {
+                // Positive Z in NDC is away from the camera
+                continue;
+            }
+        }
+
+        // --- 2e. OPTIMIZATION: Frustum Culling (Trivial Rejection) ---
+        // Discard triangles that are entirely outside the viewing volume.
+        {
+            const int outcode0 = compute_outcode(ndc_v0);
+            const int outcode1 = compute_outcode(ndc_v1);
+            const int outcode2 = compute_outcode(ndc_v2);
+
+            // If the bitwise AND is non-zero, all 3 vertices are outside the same plane.
+            if ((outcode0 & outcode1 & outcode2) != 0) {
+                continue;
+            }
+        }
+
+        // --- 2f. Viewport Transform (NDC to Screen Coordinates) ---
+        vec3 screen_v0, screen_v1, screen_v2; {
+            // Map X from [-1, 1] to [0, screen_width]
+            screen_v0[0] = (ndc_v0[0] + 1.0f) * half_width;
+            screen_v1[0] = (ndc_v1[0] + 1.0f) * half_width;
+            screen_v2[0] = (ndc_v2[0] + 1.0f) * half_width;
+
+            // Map Y from [-1, 1] to [screen_height, 0] (inverting Y for top-left origin)
+            screen_v0[1] = (1.0f - ndc_v0[1]) * half_height;
+            screen_v1[1] = (1.0f - ndc_v1[1]) * half_height;
+            screen_v2[1] = (1.0f - ndc_v2[1]) * half_height;
+
+            // Map Z from [-1, 1] to [0, 1] for the depth buffer
+            screen_v0[2] = (ndc_v0[2] + 1.0f) * 0.5f;
+            screen_v1[2] = (ndc_v1[2] + 1.0f) * 0.5f;
+            screen_v2[2] = (ndc_v2[2] + 1.0f) * 0.5f;
+        }
+
+        const ivec3 iv0 = {(int32_t)(screen_v0[0] + 0.5f), (int32_t)(screen_v0[1] + 0.5f)};
+        const ivec3 iv1 = {(int32_t)(screen_v1[0] + 0.5f), (int32_t)(screen_v1[1] + 0.5f)};
+        const ivec3 iv2 = {(int32_t)(screen_v2[0] + 0.5f), (int32_t)(screen_v2[1] + 0.5f)};
+
+        ivec4 aabb;
+        get_raster_triangle_AABB(screen_v0, screen_v1, screen_v2, aabb);
+
+        aabb[0] = max(aabb[0], 0);
+        aabb[1] = max(aabb[1], 0);
+        aabb[2] = min(aabb[2], buff->width - 1);
+        aabb[3] = min(aabb[3], buff->height - 1);
+
+        fill_triangle(buff, iv0, iv1, iv2, aabb, 0xFF, 0xFF, 0xFF);
+        // draw_rect(buff, aabb[0], aabb[1], aabb[2], aabb[3], 0xFF, 0xFF, 0xFF);
+    }
+}
+
+
+void draw_rect(const graphics_buffer* restrict buff, uint32_t x0, uint32_t y0, const int32_t x1, const uint32_t y1, const uint8_t r, const uint8_t g, const uint8_t b) {
+    if (x0 > x1) swap_int(&x0, &x1);
+    if (y0 > y1) swap_int(&y0, &y1);
+
+    // Draw the top horizontal line
+    for (uint32_t x = x0; x <= x1; x++) {
+        set_pixel(buff, x, y0, r, g, b); // Top side
+        set_pixel(buff, x, y1, r, g, b); // Bottom side
+    }
+
+    for (uint32_t y = y0 + 1; y < y1; y++) {
+        set_pixel(buff, x0, y, r, g, b); // Left side
+        set_pixel(buff, x1, y, r, g, b); // Right side
     }
 }

@@ -43,8 +43,8 @@ LRESULT CALLBACK main_window_proc(HWND wnd, const UINT msg, const WPARAM w_param
 void init_cube_mesh(model *cube_model) {
     constexpr uint32_t UNIQUE_VERTEX_COUNT = 8;
     const vec4 unique_vertices[UNIQUE_VERTEX_COUNT] = {
-        {-0.5f, -0.5f,  0.5f, 1.0f}, { 0.5f, -0.5f,  0.5f, 1.0f}, { 0.5f,  0.5f,  0.5f, 1.0f}, {-0.5f,  0.5f,  0.5f, 1.0f},
-        {-0.5f, -0.5f, -0.5f, 1.0f}, { 0.5f, -0.5f, -0.5f, 1.0f}, { 0.5f,  0.5f, -0.5f, 1.0f}, {-0.5f,  0.5f, -0.5f, 1.0f}
+        {-0.5f, -0.5f, 0.5f, 1.0f}, {0.5f, -0.5f, 0.5f, 1.0f}, {0.5f, 0.5f, 0.5f, 1.0f}, {-0.5f, 0.5f, 0.5f, 1.0f},
+        {-0.5f, -0.5f, -0.5f, 1.0f}, {0.5f, -0.5f, -0.5f, 1.0f}, {0.5f, 0.5f, -0.5f, 1.0f}, {-0.5f, 0.5f, -0.5f, 1.0f}
     };
     constexpr uint32_t CUBE_INDEX_COUNT = 36;
     const uint32_t cube_indices[CUBE_INDEX_COUNT] = {
@@ -147,7 +147,7 @@ int WINAPI WinMain(
 
         versor rot;
         glm_mat4_quat(cube_rot, rot);
-        render_obj_wire(my_cube, cube_pos, rot, GLM_VEC3_ONE, &my_camera, &g_backbuffer);
+        render_obj_raster(my_cube, cube_pos, rot, GLM_VEC3_ONE, &my_camera, &g_backbuffer);
 
         glm_vec3_add(cube_pos, velocity, cube_pos);
 

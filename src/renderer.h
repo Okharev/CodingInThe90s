@@ -57,6 +57,10 @@ void camera_init(camera *cam, vec3 pos, versor rot, float fov, float aspect, flo
 
 void render_gradient(const graphics_buffer *restrict buffer, uint32_t x_offset, uint32_t y_offset);
 
+void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera *restrict cam, const graphics_buffer *restrict buff);
+
+void draw_rect(const graphics_buffer* restrict buff, uint32_t x0, uint32_t y0, const int32_t x1, const uint32_t y1, const uint8_t r, const uint8_t g, const uint8_t b);
+
 void set_pixel(
     const graphics_buffer * restrict buffer,
     uint32_t x,
