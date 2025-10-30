@@ -8,9 +8,6 @@ set(CMAKE_C_STANDARD 23)
 
 set (CMAKE_C_FLAGS "-march=native -mtune=native -ffast-math -fopenmp-simd -lm")
 
-
-# Include the FetchContent module for managing dependencies
-
 include(FetchContent)
 
 # --- Dependency Declarations ---
@@ -43,17 +40,14 @@ FetchContent_Declare(
         GIT_TAG v0.9.6 # Use a specific, stable version
 )
 
-# --- Make Dependencies Available ---
-
-FetchContent_MakeAvailable(simde raylib flecs cglm)
-
-
-include_directories(
+# 4. tracy - Highly optimized tracing lib
+FetchContent_Declare(
         tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG v0.12.2
 )
-option(TRACY_ENABLE "" ON)
 
-add_subdirectory(tracy)
+FetchContent_MakeAvailable(simde raylib flecs cglm tracy)
 
 add_executable(MyC23Project
         src/main.c
@@ -61,7 +55,7 @@ add_executable(MyC23Project
         src/renderer.h
         src/win32_platform.c
         src/win32_platform.h
-        tracy/public/TracyClient.cpp
+        ${tracy_SOURCE_DIR}/public/TracyClient.cpp
 )
 
 # --- Linking Libraries ---

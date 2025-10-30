@@ -42,6 +42,8 @@ LRESULT CALLBACK main_window_proc(HWND wnd, const UINT msg, const WPARAM w_param
 }
 
 void init_cube_mesh(model *cube_model) {
+    TracyCZone(init_cube_mesh, true);
+
     constexpr uint32_t UNIQUE_VERTEX_COUNT = 8;
     const vec4 unique_vertices[UNIQUE_VERTEX_COUNT] = {
         {-0.5f, -0.5f, 0.5f, 1.0f}, {0.5f, -0.5f, 0.5f, 1.0f}, {0.5f, 0.5f, 0.5f, 1.0f}, {-0.5f, 0.5f, 0.5f, 1.0f},
@@ -57,11 +59,15 @@ void init_cube_mesh(model *cube_model) {
     cube_model->index_count = CUBE_INDEX_COUNT;
     cube_model->vertices = malloc(sizeof(vec4) * UNIQUE_VERTEX_COUNT);
     cube_model->indices = malloc(sizeof(uint32_t) * CUBE_INDEX_COUNT);
+    TracyCAlloc(cube_model->vertices, sizeof(vec4) * UNIQUE_VERTEX_COUNT);
+    TracyCAlloc(cube_model->indices, sizeof(uint32_t) * CUBE_INDEX_COUNT);
     memcpy(cube_model->vertices, unique_vertices, sizeof(vec4) * UNIQUE_VERTEX_COUNT);
     memcpy(cube_model->indices, cube_indices, sizeof(uint32_t) * CUBE_INDEX_COUNT);
 
     // Call the pre-processing function
     model_build_unique_edges(cube_model);
+
+    TracyCZoneEnd(init_cube_mesh);
 }
 
 void init_camera_for_cube(camera *cam, float window_width, float window_height) {
@@ -83,6 +89,8 @@ int WINAPI WinMain(
     PSTR lpCmdLine,
     int nShowCmd
 ) {
+    TracyCZone(main_tracy, true);
+
     WNDCLASSA window_class = {0};
     window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     window_class.lpfnWndProc = main_window_proc;
@@ -122,7 +130,7 @@ int WINAPI WinMain(
 
 
     while (g_running) {
-        TracyCFrameMarkNamed("main")
+        TracyCFrameMarkStart("main");
 
 
         MSG msg;
@@ -165,7 +173,13 @@ int WINAPI WinMain(
             rect.bottom - rect.top
         );
         ReleaseDC(window, hdc);
+
+        TracyCFrameMarkEnd("main");
     }
 
+    model mod;
+    init_cube_mesh(&mod);
+
+    TracyCZoneEnd(main_tracy);
     return 0;
 }

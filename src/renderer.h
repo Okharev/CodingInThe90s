@@ -7,7 +7,7 @@
 
 typedef struct {
     int32_t x_min, y_min, x_max, y_max;
-    ivec3* triangle_list;
+    ivec3 *triangle_list;
     uint32_t triangle_count;
 } Tile;
 
@@ -16,7 +16,7 @@ typedef struct {
     uint32_t height;
     uint32_t pitch;
     void *memory;
-    Tile* tiles;
+    Tile *tiles;
 } graphics_buffer;
 
 typedef struct {
@@ -31,8 +31,8 @@ typedef struct {
     uint32_t index_count;
 
     // --- NEW MEMBERS ---
-    model_edge *edges;       // A dynamic array of unique edges
-    uint32_t edge_count;     // The number of unique edges
+    model_edge *edges; // A dynamic array of unique edges
+    uint32_t edge_count; // The number of unique edges
 } model;
 
 typedef struct {
@@ -52,9 +52,10 @@ typedef struct {
     bool projection_is_dirty;
 } camera;
 
-void render_obj_wire(model model, vec3 pos, versor rot, vec3 scale, camera *restrict cam, graphics_buffer *restrict buff);
+void render_obj_wire(model model, vec3 pos, versor rot, vec3 scale, camera *restrict cam,
+                     graphics_buffer *restrict buff);
 
-void model_build_unique_edges(model * restrict m);
+void model_build_unique_edges(model *restrict m);
 
 void clean_buff(const graphics_buffer *restrict buffer);
 
@@ -64,12 +65,14 @@ void camera_init(camera *cam, vec3 pos, versor rot, float fov, float aspect, flo
 
 void render_gradient(const graphics_buffer *restrict buffer, uint32_t x_offset, uint32_t y_offset);
 
-void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera *restrict cam, const graphics_buffer *restrict buff);
+void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera *restrict cam,
+                       const graphics_buffer *restrict buff);
 
-void draw_rect(const graphics_buffer* restrict buff, uint32_t x0, uint32_t y0, const int32_t x1, const uint32_t y1, const uint8_t r, const uint8_t g, const uint8_t b);
+void draw_rect(const graphics_buffer *restrict buff, uint32_t x0, uint32_t y0, const int32_t x1, const uint32_t y1,
+               const uint8_t r, const uint8_t g, const uint8_t b);
 
 void set_pixel(
-    const graphics_buffer * restrict buffer,
+    const graphics_buffer *restrict buffer,
     uint32_t x,
     uint32_t y,
     uint8_t r,

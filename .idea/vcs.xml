@@ -2,14 +2,20 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug-system/_deps/cglm-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug-system/_deps/flecs-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug-system/_deps/raylib-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-release-system/_deps/cglm-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-release-system/_deps/flecs-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-release-system/_deps/raylib-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo-system/_deps/cglm-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo-system/_deps/flecs-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo-system/_deps/raylib-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/cglm-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/flecs-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/raylib-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/tracy-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release-system-tracing-off/_deps/cglm-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release-system-tracing-off/_deps/flecs-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release-system-tracing-off/_deps/raylib-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release-system-tracing-off/_deps/tracy-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/cglm-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/flecs-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/raylib-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/tracy-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo/_deps/cglm-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo/_deps/raylib-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo/_deps/tracy-src" vcs="Git" />
   </component>
 </project>

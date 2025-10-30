@@ -4,7 +4,6 @@
 
 #include "tracy/TracyC.h"
 
-
 #define OUTCODE_RIGHT  1  // 000001
 #define OUTCODE_LEFT   2  // 000010
 #define OUTCODE_TOP    4  // 000100
@@ -13,7 +12,6 @@
 #define OUTCODE_NEAR   32 // 100000
 
 static inline int32_t compute_outcode(const vec3 v) {
-
     int code = 0;
     if (v[0] > 1.0f) code |= OUTCODE_RIGHT;
     if (v[0] < -1.0f) code |= OUTCODE_LEFT;
@@ -40,36 +38,29 @@ _a < _b ? _a : _b;       \
 })
 
 static inline void get_raster_triangle_AABB(const vec3 vone, const vec3 vtwo, const vec3 vthree, ivec4 dest) {
-    // Find the min and max, and cast to integer to define the pixel boundary.
-    // Add 0.5f for rounding to the nearest integer instead of truncating.
-    TracyCZone(AABB_triangle_tracy, true);
-
-    const int32_t x0 = (int32_t)(vone[0] + 0.5f);
-    const int32_t y0 = (int32_t)(vone[1] + 0.5f);
-    const int32_t x1 = (int32_t)(vtwo[0] + 0.5f);
-    const int32_t y1 = (int32_t)(vtwo[1] + 0.5f);
-    const int32_t x2 = (int32_t)(vthree[0] + 0.5f);
-    const int32_t y2 = (int32_t)(vthree[1] + 0.5f);
+    const int32_t x0 = (int32_t) (vone[0] + 0.5f);
+    const int32_t y0 = (int32_t) (vone[1] + 0.5f);
+    const int32_t x1 = (int32_t) (vtwo[0] + 0.5f);
+    const int32_t y1 = (int32_t) (vtwo[1] + 0.5f);
+    const int32_t x2 = (int32_t) (vthree[0] + 0.5f);
+    const int32_t y2 = (int32_t) (vthree[1] + 0.5f);
 
     dest[0] = min(x0, min(x1, x2)); // xmin
     dest[1] = min(y0, min(y1, y2)); // ymin
     dest[2] = max(x0, max(x1, x2)); // xmax
     dest[3] = max(y0, max(y1, y2)); // ymax
-
-    TracyCZoneEnd(AABB_triangle_tracy);
 }
 
-static inline int32_t get_determinant(const int32_t x0, const int32_t y0, const int32_t x1, const int32_t y1, const int32_t xp, const int32_t yp) {
+static inline int32_t get_determinant(const int32_t x0, const int32_t y0, const int32_t x1, const int32_t y1,
+                                      const int32_t xp, const int32_t yp) {
     return (x1 - x0) * (yp - y0) - (y1 - y0) * (xp - x0);
 }
 
 
-static void fill_triangle(const graphics_buffer * restrict buff,
+static void fill_triangle(const graphics_buffer *restrict buff,
                           const ivec3 v0, const ivec3 v1, const ivec3 v2,
                           const ivec4 aabb, // AABB is now [xmin, ymin, xmax, ymax]
                           const uint8_t r, const uint8_t g, const uint8_t b) {
-    TracyCZone(fill_triangle_tracy, true);
-
     // 1. Setup constants for standard edge functions
     // Edge 0: v0 -> v1
     const int32_t dx0 = v1[0] - v0[0];
@@ -91,7 +82,7 @@ static void fill_triangle(const graphics_buffer * restrict buff,
     int32_t row_w2 = get_determinant(v2[0], v2[1], v0[0], v0[1], aabb[0], aabb[1]);
 
     // 3. Pre-calculate the packed color once
-    const uint32_t color = (r << 16) | (g << 8) | b;
+    const uint32_t color = r << 16 | g << 8 | b;
 
     for (int32_t y = aabb[1]; y <= aabb[3]; ++y) {
         // Initialize working values for this row
@@ -101,7 +92,7 @@ static void fill_triangle(const graphics_buffer * restrict buff,
 
         // Calculate pointer to the start of this row in memory
         // (Assumes we clipped AABB to screen bounds previously!)
-        uint32_t * restrict pixel_row = (uint32_t* restrict)buff->memory + (y * buff->width + aabb[0]);
+        uint32_t *restrict pixel_row = (uint32_t * restrict) buff->memory + (y * buff->width + aabb[0]);
 
         for (int32_t x = aabb[0]; x <= aabb[2]; ++x) {
             // The Critical Inner Loop: ONLY comparisons and additions now.
@@ -124,8 +115,6 @@ static void fill_triangle(const graphics_buffer * restrict buff,
         row_w1 += dx1;
         row_w2 += dx2;
     }
-
-    TracyCZoneEnd(fill_triangle_tracy);
 }
 
 
@@ -141,6 +130,7 @@ static inline void get_cam_view_mat4(camera cam, mat4 dest) {
 
 static inline int iabs(const int x) { return x >= 0 ? x : -x; }
 static inline int isgn(const int x) { return (x > 0) - (x < 0); }
+
 static inline void swap_int(int *a, int *b) {
     const int temp = *a;
     *a = *b;
@@ -187,11 +177,13 @@ void draw_line(
         if (x0 == x1 && y0 == y1) break;
 
         const int e2 = 2 * error;
-        if (e2 >= dy) { // Favor moving in X
+        if (e2 >= dy) {
+            // Favor moving in X
             error += dy;
             x0 += incX;
         }
-        if (e2 <= dx) { // Favor moving in Y
+        if (e2 <= dx) {
+            // Favor moving in Y
             error += dx;
             y0 += incY;
         }
@@ -199,30 +191,38 @@ void draw_line(
 }
 
 void set_pixel(
-    const graphics_buffer * restrict buffer,
+    const graphics_buffer *restrict buffer,
     const uint32_t x,
     const uint32_t y,
     const uint8_t r,
     const uint8_t g,
     const uint8_t b
 ) {
-    uint32_t * restrict pixels = buffer->memory;
+    uint32_t *restrict pixels = buffer->memory;
     pixels[y * buffer->width + x] = (r << 16) | (g << 8) | b;
 }
 
 void model_build_unique_edges(model *m) {
+    TracyCZone(model_build_unique_edges, true);
+
     uint32_t capacity = m->index_count;
-    model_edge * restrict unique_edges = malloc(sizeof(model_edge) * capacity);
+    model_edge *restrict unique_edges = malloc(sizeof(model_edge) * capacity);
     uint32_t unique_count = 0;
 
     for (uint32_t i = 0; i < m->index_count; i += 3) {
-        const uint32_t indices[3] = {m->indices[i], m->indices[i+1], m->indices[i+2]};
-        const model_edge triangle_edges[3] = {{indices[0], indices[1]}, {indices[1], indices[2]}, {indices[2], indices[0]}};
+        const uint32_t indices[3] = {m->indices[i], m->indices[i + 1], m->indices[i + 2]};
+        const model_edge triangle_edges[3] = {
+            {indices[0], indices[1]}, {indices[1], indices[2]}, {indices[2], indices[0]}
+        };
 
         for (int j = 0; j < 3; j++) {
             // Canonical representation (smaller index first) to ensure (v0, v1) is the same as (v1, v0)
-            const uint32_t v_start = triangle_edges[j].v0 < triangle_edges[j].v1 ? triangle_edges[j].v0 : triangle_edges[j].v1;
-            const uint32_t v_end   = triangle_edges[j].v0 > triangle_edges[j].v1 ? triangle_edges[j].v0 : triangle_edges[j].v1;
+            const uint32_t v_start = triangle_edges[j].v0 < triangle_edges[j].v1
+                                         ? triangle_edges[j].v0
+                                         : triangle_edges[j].v1;
+            const uint32_t v_end = triangle_edges[j].v0 > triangle_edges[j].v1
+                                       ? triangle_edges[j].v0
+                                       : triangle_edges[j].v1;
 
             bool found = false;
             for (uint32_t k = 0; k < unique_count; k++) {
@@ -244,14 +244,19 @@ void model_build_unique_edges(model *m) {
 
     m->edge_count = unique_count;
     m->edges = malloc(sizeof(model_edge) * m->edge_count);
+    TracyCAlloc(m->edges, sizeof(model_edge) * m->edge_count);
     if (m->edges) {
         memcpy(m->edges, unique_edges, sizeof(model_edge) * m->edge_count);
     }
+    TracyCFree(unique_edges);
     free(unique_edges);
+
+    TracyCZoneEnd(model_build_unique_edges);
 }
 
 
-void render_obj_wire(model model, vec3 pos, versor rot, vec3 scale, camera *restrict cam, graphics_buffer *restrict buff) {
+void render_obj_wire(model model, vec3 pos, versor rot, vec3 scale, camera *restrict cam,
+                     graphics_buffer *restrict buff) {
     mat4 model_matrix; {
         mat4 rotation_mat = GLM_MAT4_IDENTITY_INIT;
         mat4 translate_mat = GLM_MAT4_IDENTITY_INIT;
@@ -418,7 +423,7 @@ void render_obj(model model, vec3 pos, versor rot, vec3 scale, camera *restrict 
     }
 }
 
-void clean_buff(const graphics_buffer * restrict buffer) {
+void clean_buff(const graphics_buffer *restrict buffer) {
     memset(buffer->memory, 0, buffer->pitch * buffer->height);
 }
 
@@ -489,11 +494,11 @@ void render_gradient(const graphics_buffer *restrict buffer, const uint32_t x_of
     }
 }
 
-void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera * restrict cam, const graphics_buffer * restrict buff) {
+void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera *restrict cam,
+                       const graphics_buffer *restrict buff) {
     TracyCZone(renderer_obj_tracy, true);
-    // --- 1. Calculate the Model-View-Projection (MVP) matrix (once per object) ---
 
-
+    TracyCZoneN(stage_mvp, "MVPCalc", true);
     mat4 model_matrix; {
         mat4 rotation_mat = GLM_MAT4_IDENTITY_INIT;
         mat4 translate_mat = GLM_MAT4_IDENTITY_INIT;
@@ -517,109 +522,102 @@ void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera * r
     const float half_width = 0.5f * (float) buff->width;
     const float half_height = 0.5f * (float) buff->height;
 
+    TracyCZoneEnd(stage_mvp);
 
-    // --- 2. Process each triangle of the model ---
     for (int i = 0; i < model.index_count; i += 3) {
+        TracyCZoneN(triangle_pipeline, "TrianglePipeline", true);
 
+        // --- Transform vertices ---
+        TracyCZoneN(stage_transform, "Transform", true);
         const uint32_t i0 = model.indices[i];
         const uint32_t i1 = model.indices[i + 1];
         const uint32_t i2 = model.indices[i + 2];
 
-        // --- 2a. Transform vertices from Model Space to Clip Space ---
         vec4 clip_v0, clip_v1, clip_v2;
         glm_mat4_mulv(mvp_mat, model.vertices[i0], clip_v0);
         glm_mat4_mulv(mvp_mat, model.vertices[i1], clip_v1);
         glm_mat4_mulv(mvp_mat, model.vertices[i2], clip_v2);
+        TracyCZoneEnd(stage_transform);
 
-        // --- 2b. CRITICAL: Near-Plane Culling ---
-        // Discard any triangle with a vertex behind or on the camera's near plane.
+        // --- Near-plane culling ---
+        TracyCZoneN(stage_nearplane, "NearPlaneCull", true);
         if (clip_v0[3] <= 0.0f || clip_v1[3] <= 0.0f || clip_v2[3] <= 0.0f) {
+            TracyCZoneEnd(stage_nearplane);
+            TracyCZoneEnd(triangle_pipeline);
+
             continue;
         }
+        TracyCZoneEnd(stage_nearplane);
 
-        // --- 2c. Perspective Divide (to Normalized Device Coordinates) ---
-        vec3 ndc_v0, ndc_v1, ndc_v2; {
-            // Use reciprocal multiplication (faster than division)
-            const float recip_w0 = 1.0f / clip_v0[3];
-            ndc_v0[0] = clip_v0[0] * recip_w0;
-            ndc_v0[1] = clip_v0[1] * recip_w0;
-            ndc_v0[2] = clip_v0[2] * recip_w0;
+        // --- Perspective divide ---
+        TracyCZoneN(stage_ndc, "PerspectiveDivide", true);
+        vec3 ndc_v0, ndc_v1, ndc_v2;
+        const float rw0 = 1.0f / clip_v0[3];
+        const float rw1 = 1.0f / clip_v1[3];
+        const float rw2 = 1.0f / clip_v2[3];
+        glm_vec3_copy((vec3){clip_v0[0] * rw0, clip_v0[1] * rw0, clip_v0[2] * rw0}, ndc_v0);
+        glm_vec3_copy((vec3){clip_v1[0] * rw1, clip_v1[1] * rw1, clip_v1[2] * rw1}, ndc_v1);
+        glm_vec3_copy((vec3){clip_v2[0] * rw2, clip_v2[1] * rw2, clip_v2[2] * rw2}, ndc_v2);
+        TracyCZoneEnd(stage_ndc);
 
-            const float recip_w1 = 1.0f / clip_v1[3];
-            ndc_v1[0] = clip_v1[0] * recip_w1;
-            ndc_v1[1] = clip_v1[1] * recip_w1;
-            ndc_v1[2] = clip_v1[2] * recip_w1;
+        // --- Back-face culling ---
+        TracyCZoneN(stage_backface, "BackfaceCull", true);
+        vec3 edge1, edge2, normal;
+        glm_vec3_sub(ndc_v1, ndc_v0, edge1);
+        glm_vec3_sub(ndc_v2, ndc_v0, edge2);
+        glm_vec3_cross(edge1, edge2, normal);
+        if (normal[2] > 0.0f) {
+            TracyCZoneEnd(stage_backface);
+            TracyCZoneEnd(triangle_pipeline);
 
-            const float recip_w2 = 1.0f / clip_v2[3];
-            ndc_v2[0] = clip_v2[0] * recip_w2;
-            ndc_v2[1] = clip_v2[1] * recip_w2;
-            ndc_v2[2] = clip_v2[2] * recip_w2;
+            continue;
         }
+        TracyCZoneEnd(stage_backface);
 
-        // --- 2d. OPTIMIZATION: Back-Face Culling ---
-        // Discard triangles that are facing away from the camera.
-        {
-            vec3 edge1, edge2;
-            glm_vec3_sub(ndc_v1, ndc_v0, edge1);
-            glm_vec3_sub(ndc_v2, ndc_v0, edge2);
-            vec3 normal;
-            glm_vec3_cross(edge1, edge2, normal);
-            if (normal[2] > 0.0f) {
-                // Positive Z in NDC is away from the camera
-                continue;
-            }
+        // --- Frustum culling ---
+        TracyCZoneN(stage_frustum, "FrustumCull", true);
+        const int outcode0 = compute_outcode(ndc_v0);
+        const int outcode1 = compute_outcode(ndc_v1);
+        const int outcode2 = compute_outcode(ndc_v2);
+        if ((outcode0 & outcode1 & outcode2) != 0) {
+            TracyCZoneEnd(stage_frustum);
+            TracyCZoneEnd(triangle_pipeline);
+
+            continue;
         }
+        TracyCZoneEnd(stage_frustum);
 
-        // --- 2e. OPTIMIZATION: Frustum Culling (Trivial Rejection) ---
-        // Discard triangles that are entirely outside the viewing volume.
-        {
-            const int outcode0 = compute_outcode(ndc_v0);
-            const int outcode1 = compute_outcode(ndc_v1);
-            const int outcode2 = compute_outcode(ndc_v2);
-
-            // If the bitwise AND is non-zero, all 3 vertices are outside the same plane.
-            if ((outcode0 & outcode1 & outcode2) != 0) {
-                continue;
-            }
-        }
-
-        // --- 2f. Viewport Transform (NDC to Screen Coordinates) ---
-        vec3 screen_v0, screen_v1, screen_v2; {
-            // Map X from [-1, 1] to [0, screen_width]
-            screen_v0[0] = (ndc_v0[0] + 1.0f) * half_width;
-            screen_v1[0] = (ndc_v1[0] + 1.0f) * half_width;
-            screen_v2[0] = (ndc_v2[0] + 1.0f) * half_width;
-
-            // Map Y from [-1, 1] to [screen_height, 0] (inverting Y for top-left origin)
-            screen_v0[1] = (1.0f - ndc_v0[1]) * half_height;
-            screen_v1[1] = (1.0f - ndc_v1[1]) * half_height;
-            screen_v2[1] = (1.0f - ndc_v2[1]) * half_height;
-
-            // Map Z from [-1, 1] to [0, 1] for the depth buffer
-            screen_v0[2] = (ndc_v0[2] + 1.0f) * 0.5f;
-            screen_v1[2] = (ndc_v1[2] + 1.0f) * 0.5f;
-            screen_v2[2] = (ndc_v2[2] + 1.0f) * 0.5f;
-        }
-
-        const ivec3 iv0 = {(int32_t)(screen_v0[0] + 0.5f), (int32_t)(screen_v0[1] + 0.5f)};
-        const ivec3 iv1 = {(int32_t)(screen_v1[0] + 0.5f), (int32_t)(screen_v1[1] + 0.5f)};
-        const ivec3 iv2 = {(int32_t)(screen_v2[0] + 0.5f), (int32_t)(screen_v2[1] + 0.5f)};
+        // --- Rasterization ---
+        TracyCZoneN(stage_raster, "Rasterize", true);
+        vec3 screen_v0, screen_v1, screen_v2;
+        screen_v0[0] = (ndc_v0[0] + 1.0f) * half_width;
+        screen_v0[1] = (1.0f - ndc_v0[1]) * half_height;
+        screen_v1[0] = (ndc_v1[0] + 1.0f) * half_width;
+        screen_v1[1] = (1.0f - ndc_v1[1]) * half_height;
+        screen_v2[0] = (ndc_v2[0] + 1.0f) * half_width;
+        screen_v2[1] = (1.0f - ndc_v2[1]) * half_height;
 
         ivec4 aabb;
         get_raster_triangle_AABB(screen_v0, screen_v1, screen_v2, aabb);
-
         aabb[0] = max(aabb[0], 0);
         aabb[1] = max(aabb[1], 0);
         aabb[2] = min(aabb[2], buff->width - 1);
         aabb[3] = min(aabb[3], buff->height - 1);
 
-        fill_triangle(buff, iv0, iv1, iv2, aabb, 0xFF, 0xFF, 0xFF);
+        fill_triangle(buff, (ivec3){(int) screen_v0[0], (int) screen_v0[1]},
+                      (ivec3){(int) screen_v1[0], (int) screen_v1[1]},
+                      (ivec3){(int) screen_v2[0], (int) screen_v2[1]},
+                      aabb, 0xFF, 0xFF, 0xFF);
+        TracyCZoneEnd(stage_raster);
+
+        TracyCZoneEnd(triangle_pipeline);
     }
     TracyCZoneEnd(renderer_obj_tracy);
 }
 
 
-void draw_rect(const graphics_buffer* restrict buff, uint32_t x0, uint32_t y0, const int32_t x1, const uint32_t y1, const uint8_t r, const uint8_t g, const uint8_t b) {
+void draw_rect(const graphics_buffer *restrict buff, uint32_t x0, uint32_t y0, const int32_t x1, const uint32_t y1,
+               const uint8_t r, const uint8_t g, const uint8_t b) {
     if (x0 > x1) swap_int(&x0, &x1);
     if (y0 > y1) swap_int(&y0, &y1);
 
