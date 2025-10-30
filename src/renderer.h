@@ -6,10 +6,17 @@
 #include "cglm/cglm.h"
 
 typedef struct {
+    int32_t x_min, y_min, x_max, y_max;
+    ivec3* triangle_list;
+    uint32_t triangle_count;
+} Tile;
+
+typedef struct {
     uint32_t width;
     uint32_t height;
     uint32_t pitch;
     void *memory;
+    Tile* tiles;
 } graphics_buffer;
 
 typedef struct {

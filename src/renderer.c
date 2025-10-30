@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "tracy/TracyC.h"
 
 
 #define OUTCODE_RIGHT  1  // 000001
@@ -12,6 +13,7 @@
 #define OUTCODE_NEAR   32 // 100000
 
 static inline int32_t compute_outcode(const vec3 v) {
+
     int code = 0;
     if (v[0] > 1.0f) code |= OUTCODE_RIGHT;
     if (v[0] < -1.0f) code |= OUTCODE_LEFT;
@@ -19,6 +21,7 @@ static inline int32_t compute_outcode(const vec3 v) {
     if (v[1] < -1.0f) code |= OUTCODE_BOTTOM;
     if (v[2] > 1.0f) code |= OUTCODE_FAR;
     if (v[2] < -1.0f) code |= OUTCODE_NEAR;
+
     return code;
 }
 
@@ -36,9 +39,11 @@ __typeof__ (b) _b = (b); \
 _a < _b ? _a : _b;       \
 })
 
-static inline void get_raster_triangle_AABB(const vec3 vone, const vec3 vtwo, const vec3 vthree, int32_t dest[4]) {
+static inline void get_raster_triangle_AABB(const vec3 vone, const vec3 vtwo, const vec3 vthree, ivec4 dest) {
     // Find the min and max, and cast to integer to define the pixel boundary.
     // Add 0.5f for rounding to the nearest integer instead of truncating.
+    TracyCZone(AABB_triangle_tracy, true);
+
     const int32_t x0 = (int32_t)(vone[0] + 0.5f);
     const int32_t y0 = (int32_t)(vone[1] + 0.5f);
     const int32_t x1 = (int32_t)(vtwo[0] + 0.5f);
@@ -50,39 +55,77 @@ static inline void get_raster_triangle_AABB(const vec3 vone, const vec3 vtwo, co
     dest[1] = min(y0, min(y1, y2)); // ymin
     dest[2] = max(x0, max(x1, x2)); // xmax
     dest[3] = max(y0, max(y1, y2)); // ymax
+
+    TracyCZoneEnd(AABB_triangle_tracy);
 }
 
 static inline int32_t get_determinant(const int32_t x0, const int32_t y0, const int32_t x1, const int32_t y1, const int32_t xp, const int32_t yp) {
-    // This formula is correct, just needs consistent integer types.
     return (x1 - x0) * (yp - y0) - (y1 - y0) * (xp - x0);
 }
 
 
 static void fill_triangle(const graphics_buffer * restrict buff,
                           const ivec3 v0, const ivec3 v1, const ivec3 v2,
-                          const int32_t aabb[4], // AABB is now [xmin, ymin, xmax, ymax]
+                          const ivec4 aabb, // AABB is now [xmin, ymin, xmax, ymax]
                           const uint8_t r, const uint8_t g, const uint8_t b) {
+    TracyCZone(fill_triangle_tracy, true);
 
-    // Unpack AABB for clarity
-    const int32_t x_min = aabb[0];
-    const int32_t y_min = aabb[1];
-    const int32_t x_max = aabb[2];
-    const int32_t y_max = aabb[3];
+    // 1. Setup constants for standard edge functions
+    // Edge 0: v0 -> v1
+    const int32_t dx0 = v1[0] - v0[0];
+    const int32_t dy0 = v1[1] - v0[1];
+    // Edge 1: v1 -> v2
+    const int32_t dx1 = v2[0] - v1[0];
+    const int32_t dy1 = v2[1] - v1[1];
+    // Edge 2: v2 -> v0
+    const int32_t dx2 = v0[0] - v2[0];
+    const int32_t dy2 = v0[1] - v2[1];
 
-    // Corrected loops: iterate from min to max (inclusive)
-    for (int32_t y = y_min; y <= y_max; ++y) {
-        for (int32_t x = x_min; x <= x_max; ++x) {
+    // 2. Calculate initial values for the starting pixel (xmin, ymin)
+    // We use the full formula ONCE here.
+    // Notice we are testing the CENTER of the pixel (x + 0.5, y + 0.5) implicitly
+    // by how we set up our edge functions (a common trick is 'top-left' fill convention,
+    // but for simplicity we'll stick to your current math).
+    int32_t row_w0 = get_determinant(v0[0], v0[1], v1[0], v1[1], aabb[0], aabb[1]);
+    int32_t row_w1 = get_determinant(v1[0], v1[1], v2[0], v2[1], aabb[0], aabb[1]);
+    int32_t row_w2 = get_determinant(v2[0], v2[1], v0[0], v0[1], aabb[0], aabb[1]);
 
-            // Calculate determinants using integer coordinates
-            const int32_t det0 = get_determinant(v0[0], v0[1], v1[0], v1[1], x, y);
-            const int32_t det1 = get_determinant(v1[0], v1[1], v2[0], v2[1], x, y);
-            const int32_t det2 = get_determinant(v2[0], v2[1], v0[0], v0[1], x, y);
+    // 3. Pre-calculate the packed color once
+    const uint32_t color = (r << 16) | (g << 8) | b;
 
-            if (det0 >= 0 && det1 >= 0 && det2 >= 0) {
-                set_pixel(buff, x, y, r, g, b);
+    for (int32_t y = aabb[1]; y <= aabb[3]; ++y) {
+        // Initialize working values for this row
+        int32_t w0 = row_w0;
+        int32_t w1 = row_w1;
+        int32_t w2 = row_w2;
+
+        // Calculate pointer to the start of this row in memory
+        // (Assumes we clipped AABB to screen bounds previously!)
+        uint32_t * restrict pixel_row = (uint32_t* restrict)buff->memory + (y * buff->width + aabb[0]);
+
+        for (int32_t x = aabb[0]; x <= aabb[2]; ++x) {
+            // The Critical Inner Loop: ONLY comparisons and additions now.
+            if ((w0 | w1 | w2) >= 0) {
+                *pixel_row = color;
             }
+
+            // Move one pixel RIGHT: Add 'dy' component to determinants
+            // (Note: The sign might need flipping depending on your exact coordinate system
+            // Y-is-up vs Y-is-down, but the concept is: it's just an addition)
+            w0 -= dy0;
+            w1 -= dy1;
+            w2 -= dy2;
+
+            pixel_row++;
         }
+
+        // Move one pixel DOWN for the next row: Add 'dx' component
+        row_w0 += dx0;
+        row_w1 += dx1;
+        row_w2 += dx2;
     }
+
+    TracyCZoneEnd(fill_triangle_tracy);
 }
 
 
@@ -173,7 +216,7 @@ void model_build_unique_edges(model *m) {
     uint32_t unique_count = 0;
 
     for (uint32_t i = 0; i < m->index_count; i += 3) {
-        const uint32_t indices[] = {m->indices[i], m->indices[i+1], m->indices[i+2]};
+        const uint32_t indices[3] = {m->indices[i], m->indices[i+1], m->indices[i+2]};
         const model_edge triangle_edges[3] = {{indices[0], indices[1]}, {indices[1], indices[2]}, {indices[2], indices[0]}};
 
         for (int j = 0; j < 3; j++) {
@@ -258,7 +301,7 @@ void render_obj_wire(model model, vec3 pos, versor rot, vec3 scale, camera *rest
         const int sx1 = (ndc_v1[0] + 1.0f) * half_width;
         const int sy1 = (1.0f - ndc_v1[1]) * half_height;
 
-        draw_line(buff, sx0, sy0, sx1, sy1, 0xFF, 0xFF, 0xFF);
+        draw_line(buff, sx0, sy0, sx1, sy1, 0xFF, 0x00, 0xFF);
     }
 }
 
@@ -447,7 +490,10 @@ void render_gradient(const graphics_buffer *restrict buffer, const uint32_t x_of
 }
 
 void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera * restrict cam, const graphics_buffer * restrict buff) {
+    TracyCZone(renderer_obj_tracy, true);
     // --- 1. Calculate the Model-View-Projection (MVP) matrix (once per object) ---
+
+
     mat4 model_matrix; {
         mat4 rotation_mat = GLM_MAT4_IDENTITY_INIT;
         mat4 translate_mat = GLM_MAT4_IDENTITY_INIT;
@@ -471,8 +517,10 @@ void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera * r
     const float half_width = 0.5f * (float) buff->width;
     const float half_height = 0.5f * (float) buff->height;
 
+
     // --- 2. Process each triangle of the model ---
     for (int i = 0; i < model.index_count; i += 3) {
+
         const uint32_t i0 = model.indices[i];
         const uint32_t i1 = model.indices[i + 1];
         const uint32_t i2 = model.indices[i + 2];
@@ -566,8 +614,8 @@ void render_obj_raster(model model, vec3 pos, versor rot, vec3 scale, camera * r
         aabb[3] = min(aabb[3], buff->height - 1);
 
         fill_triangle(buff, iv0, iv1, iv2, aabb, 0xFF, 0xFF, 0xFF);
-        // draw_rect(buff, aabb[0], aabb[1], aabb[2], aabb[3], 0xFF, 0xFF, 0xFF);
     }
+    TracyCZoneEnd(renderer_obj_tracy);
 }
 
 

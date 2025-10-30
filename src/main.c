@@ -3,8 +3,9 @@
 #include "cglm/cglm.h"
 #include "renderer.h"
 #include "win32_platform.h"
+#include "tracy/TracyC.h"
 
-static bool g_running = FALSE;
+static bool g_running = false;
 static graphics_buffer g_backbuffer;
 
 LRESULT CALLBACK main_window_proc(HWND wnd, const UINT msg, const WPARAM w_param, const LPARAM l_param) {
@@ -119,7 +120,11 @@ int WINAPI WinMain(
     camera my_camera;
     init_camera_for_cube(&my_camera, g_backbuffer.width, g_backbuffer.height);
 
+
     while (g_running) {
+        TracyCFrameMarkNamed("main")
+
+
         MSG msg;
         while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {

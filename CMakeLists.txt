@@ -1,15 +1,16 @@
-# Minimum CMake version required
 cmake_minimum_required(VERSION 3.31)
 
 # Project definition
-project(MyC23Project LANGUAGES C)
+project(MyC23Project LANGUAGES C CXX)
 
 # Set the C standard to C23
 set(CMAKE_C_STANDARD 23)
 
 set (CMAKE_C_FLAGS "-march=native -mtune=native -ffast-math -fopenmp-simd -lm")
 
+
 # Include the FetchContent module for managing dependencies
+
 include(FetchContent)
 
 # --- Dependency Declarations ---
@@ -46,13 +47,22 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(simde raylib flecs cglm)
 
-# --- Project Sources ---
 
-add_executable(MyC23Project src/main.c
+include_directories(
+        tracy
+)
+option(TRACY_ENABLE "" ON)
+
+add_subdirectory(tracy)
+
+add_executable(MyC23Project
+        src/main.c
         src/renderer.c
         src/renderer.h
         src/win32_platform.c
-        src/win32_platform.h)
+        src/win32_platform.h
+        tracy/public/TracyClient.cpp
+)
 
 # --- Linking Libraries ---
 
@@ -68,6 +78,7 @@ target_include_directories(MyC23Project PRIVATE
 target_link_libraries(MyC23Project PRIVATE
         raylib
         flecs
+        Tracy::TracyClient
 )
 
 # On some platforms, raylib requires linking additional system libraries.

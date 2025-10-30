@@ -1,5 +1,7 @@
 ﻿#include "win32_platform.h"
 
+#include "tracy/TracyC.h"
+
 void win32_resize_dib_section(graphics_buffer *buffer, const uint32_t width, const uint32_t height) {
     if (buffer->memory) {
         VirtualFree(buffer->memory, 0, MEM_RELEASE);
@@ -29,6 +31,8 @@ void win32_display_buffer(
     const uint32_t window_width,
     const uint32_t window_height
 ) {
+    TracyCZone(win32_stretchDIBits_tracy, true);
+
     BITMAPINFO info = {0};
     info.bmiHeader.biSize = sizeof(info.bmiHeader);
     info.bmiHeader.biWidth = buffer->width;
@@ -46,4 +50,6 @@ void win32_display_buffer(
         DIB_RGB_COLORS,
         SRCCOPY
     );
+
+    TracyCZoneEnd(win32_stretchDIBits_tracy);
 }
